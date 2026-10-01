@@ -21,3 +21,6 @@ Thumbs.db
 
 # NOTE: results/ is deliberately NOT ignored. Your run logs are evidence that
 # the test actually happened, and they're part of what gets graded. Commit them.
+
+# Style memory — per-user state, rewritten on every --remember run
+data/style_memory.json
