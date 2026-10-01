@@ -29,13 +29,23 @@ import config
 
 _lines: list[str] = []
 _step_number = 0
+_printing = False
 
 
-def start_trace() -> None:
-    """Clear the trace. Call this at the start of each run."""
-    global _step_number
+def start_trace(printing: bool = True) -> None:
+    """
+    Clear the trace. Call this at the start of each run.
+
+    `printing` is why this takes an argument: step() records every step either
+    way, but it only prints when a trace has been started. Without that, the
+    trace calls in run_agent() would print on every ordinary run and `--trace`
+    would mean nothing — the steps are always recorded, and the flag decides
+    whether the user sees them go by.
+    """
+    global _step_number, _printing
     _lines.clear()
     _step_number = 0
+    _printing = printing
 
 
 def step(name: str, inputs=None, returned=None, note: str = "") -> None:
@@ -61,7 +71,8 @@ def step(name: str, inputs=None, returned=None, note: str = "") -> None:
         line += f"\n      →    {note}"
 
     _lines.append(line)
-    print(line, flush=True)
+    if _printing:
+        print(line, flush=True)
 
 
 def get_trace() -> str:

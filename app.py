@@ -5,9 +5,13 @@ FitFindr — command line.
     python app.py ask 'vintage graphic tee under $30, size M'
     python app.py ask                     keep asking until you quit
     python app.py ask --empty-wardrobe    run as a user with nothing saved
+    python app.py ask --remember          style against your saved wardrobe,
+                                          then add the find to it
     python app.py listings                browse the data  (Milestone 1)
     python app.py fields                  what fields a listing has
     python app.py examples                queries worth trying, including a dud
+    python app.py wardrobe                what's in your saved wardrobe
+    python app.py forget                  clear the saved wardrobe
 
 Add --trace to any `ask` to print the loop step by step.
 
@@ -118,7 +122,18 @@ def _ask_one(query, wardrobe, use_trace):
         print(f"  {session['error']}")
     else:
         item = session["selected_item"] or {}
-        print(f"  Found:    {item.get('title')} — ${item.get('price')} on {item.get('platform')}")
+        price = item.get("price")
+        shown = f"{price:.0f}" if isinstance(price, float) and price == int(price) else price
+        print(f"  Found:    {item.get('title')} — ${shown} on {item.get('platform')}")
+        if session.get("price_check"):
+            print(f"  Price:    {session['price_check']['summary']}")
+        if session.get("rejected"):
+            print(
+                f"  Skipped:  {len(session['rejected'])} overpriced match"
+                f"{'' if len(session['rejected']) == 1 else 'es'} ranked above it"
+            )
+        if session.get("price_warning"):
+            print(f"  Warning:  {session['price_warning']}")
         print()
         print(f"  Outfit:   {session['outfit_suggestion']}")
         print()
@@ -135,17 +150,53 @@ def _ask_one(query, wardrobe, use_trace):
     return session
 
 
-def cmd_ask(args):
-    from utils.data_loader import get_example_wardrobe, get_empty_wardrobe
-    import generate
+def _load_wardrobe(args):
+    """
+    Which wardrobe this run styles against.
 
-    wardrobe = get_empty_wardrobe() if args.empty_wardrobe else get_example_wardrobe()
+    --empty-wardrobe wins over everything, because it exists to force the
+    empty path. --memory and --remember both read the saved wardrobe, which
+    falls back to the example one the first time. Otherwise it's the example.
+    """
+    from utils.data_loader import get_example_wardrobe, get_empty_wardrobe
+    from utils import style_memory
+
     if args.empty_wardrobe:
         print("(running with an empty wardrobe)")
+        return get_empty_wardrobe()
+
+    if args.memory or args.remember:
+        wardrobe = style_memory.load_wardrobe()
+        where = "saved" if style_memory.has_memory() else "example (nothing saved yet)"
+        print(f"(styling against your {where} wardrobe — {len(wardrobe['items'])} items)")
+        return wardrobe
+
+    return get_example_wardrobe()
+
+
+def cmd_ask(args):
+    import generate
+    from utils import style_memory
+
+    wardrobe = _load_wardrobe(args)
+
+    def run(query):
+        session = _ask_one(query, wardrobe, args.trace)
+        # Only a run that actually chose something has anything to remember.
+        if args.remember and session.get("selected_item"):
+            saved, added = style_memory.remember_item(session["selected_item"])
+            title = session["selected_item"]["title"]
+            if added:
+                print(f"  Remembered: {title} — your wardrobe now has {len(saved['items'])} items.\n")
+            else:
+                print(f"  Already in your wardrobe: {title}.\n")
+            # So a follow-up query in the same interactive session sees it.
+            wardrobe["items"] = saved["items"]
+        return session
 
     try:
         if args.query:
-            _ask_one(args.query, wardrobe, args.trace)
+            run(args.query)
         else:
             print("Ask for something, or press Enter on an empty line to quit.\n")
             while True:
@@ -156,9 +207,37 @@ def cmd_ask(args):
                     break
                 if not query:
                     break
-                _ask_one(query, wardrobe, args.trace)
+                run(query)
     finally:
         print(generate.usage())
+
+
+def cmd_wardrobe(args):
+    """What style memory currently holds. (Stretch feature.)"""
+    from utils import style_memory
+
+    if not style_memory.has_memory():
+        print(
+            "Nothing saved yet, so runs style against the example wardrobe.\n"
+            "Save a find with: python app.py ask '<query>' --remember"
+        )
+        return
+
+    wardrobe = style_memory.load_wardrobe()
+    print(f"{len(wardrobe['items'])} items in {style_memory.MEMORY_PATH.name}:\n")
+    for item in wardrobe["items"]:
+        notes = f"  — {item['notes']}" if item.get("notes") else ""
+        print(f"  {item['id']:<14}{item['category']:<13}{item['name']}{notes}")
+
+
+def cmd_forget(args):
+    """Clear style memory. (Stretch feature.)"""
+    from utils import style_memory
+
+    if style_memory.forget_all():
+        print("Saved wardrobe deleted. Runs will use the example wardrobe again.")
+    else:
+        print("Nothing to forget — no wardrobe was saved.")
 
 
 def build_parser():
@@ -189,7 +268,23 @@ def build_parser():
         action="store_true",
         help="run as a user with nothing saved — one of unit 4's failure modes",
     )
+    p_ask.add_argument(
+        "--memory",
+        action="store_true",
+        help="style against the saved wardrobe instead of the example one",
+    )
+    p_ask.add_argument(
+        "--remember",
+        action="store_true",
+        help="use the saved wardrobe, then add this find to it",
+    )
     p_ask.set_defaults(func=cmd_ask)
+
+    p_wardrobe = sub.add_parser("wardrobe", help="what's in your saved wardrobe")
+    p_wardrobe.set_defaults(func=cmd_wardrobe)
+
+    p_forget = sub.add_parser("forget", help="clear the saved wardrobe")
+    p_forget.set_defaults(func=cmd_forget)
 
     return parser
 

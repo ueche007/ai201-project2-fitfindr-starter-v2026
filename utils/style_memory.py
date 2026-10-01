@@ -26,6 +26,15 @@ from utils.data_loader import get_example_wardrobe
 MEMORY_PATH = config.DATA_DIR / "style_memory.json"
 
 
+def _money(price) -> str:
+    """Prices are whole-dollar floats, so str() would give "$19.0"."""
+    try:
+        value = float(price)
+    except (TypeError, ValueError):
+        return "?"
+    return f"{value:.0f}" if value == int(value) else f"{value:.2f}"
+
+
 def has_memory() -> bool:
     """True when a wardrobe has been saved before."""
     return MEMORY_PATH.exists()
@@ -90,7 +99,7 @@ def listing_to_wardrobe_item(listing: dict) -> dict:
         "style_tags": list(listing.get("style_tags") or []),
         "notes": (
             f"Thrifted from {listing.get('platform', 'unknown')} for "
-            f"${listing.get('price', '?')}, size {listing.get('size', '?')}"
+            f"${_money(listing.get('price'))}, size {listing.get('size', '?')}"
         ),
     }
 
