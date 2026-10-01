@@ -204,13 +204,218 @@ state visible to the trace and checkable by criterion 3.
 
 ## Sample Run
 
-<!-- Filled in at Milestone 4 and Milestone 5. -->
+Every block below is real terminal output, pasted as text.
+
+### One full query, end to end
+
+```
+$ python app.py ask 'vintage graphic tee under $30, size M'
+
+  Found:    Y2K Baby Tee — Butterfly Print — $18 on depop
+  Price:    $18.00 is a good deal — $3.50 below the $21.50 median of 14 comparable listings ($15.00–$35.00, same category and a shared style tag).
+
+  Outfit:   **Outfit 1**
+Pair the Y2K Baby Tee — Butterfly Print with the baggy straight-leg jeans, dark wash and the chunky white sneakers. Finish with the brown leather belt. This combination plays with silhouette proportions by balancing the ultra-fitted baby tee with loose-fitting bottoms, keeping the color palette grounded with the dark denim.
+
+**Outfit 2**
+Layer the vintage black denim jacket (Slightly cropped) over the Y2K Baby Tee — Butterfly Print, paired with the wide-leg khaki trousers and the black combat boots (Lace-up, mid-ankle height). This look contrasts the soft, feminine butterfly graphic with rugged boots and structured trousers for an edgy Y2K street style.
+
+  Fit card: Snagged this little butterfly tee for $18 and it's practically screaming early 2000s mall culture in the best way possible. Throw it on with some baggy dark denim to play with the proportions, or toughen up the sweet pastel graphic with a cropped jacket and heavy combat boots. It’s up on depop now if your rotation needs a heavy dose of nostalgia.
+
+2 model calls this session, 686 prompt + 228 output tokens
+```
+
+### The same runner on a query the data cannot match
+
+The branch fires: it stops after the search, and `fit_card` is never written.
+
+```
+$ python app.py ask 'designer ballgown size XXS under $5'
+
+  Nothing in the 40 listings matches all of: keywords: designer, ballgown; price at or under $5; size XXS.
+  To get results, raise the $5 ceiling, drop or widen the size filter (XXS), or use words closer to how a seller would title it — this data runs on terms like vintage, y2k, 90s, graphic tee, denim, oversized, grunge, linen.
+
+0 model calls this session
+```
+
+### The second branch re-planning (stretch), with `--trace`
+
+Two overpriced candidates rejected before a third is accepted. Note that the
+step numbers make the branch visible: `compare_prices` runs three times and
+`select_item` only once.
+
+```
+$ python app.py ask 'chunky knit cardigan' --trace
+[1] parse_query
+      in:  chunky knit cardigan
+      out: description='chunky knit cardigan', size=None, max_price=None
+[2] search_listings
+      in:  description='chunky knit cardigan', size=None, max_price=None
+      out: 3 items: Knit Cardigan — Chunky Brown, Vintage Knit Vest — Argyle Brown/Cream, Platform Sneakers — White Chunky Sole
+[3] compare_prices
+      in:  candidate 1 of 3: lst_008 at $35
+      out: overpriced
+      →    $35.00 is overpriced — $15.00 above the $20.00 median of 9 comparable listings ($16.00–$28.00, same category and a shared style tag).
+[4] branch
+      out: rejected lst_008
+      →    overpriced — going round again with the next candidate
+[5] compare_prices
+      in:  candidate 2 of 3: lst_030 at $25
+      out: overpriced
+      →    $25.00 is overpriced — $4.00 above the $21.00 median of 11 comparable listings ($16.00–$35.00, same category and a shared style tag).
+[6] branch
+      out: rejected lst_030
+      →    overpriced — going round again with the next candidate
+[7] compare_prices
+      in:  candidate 3 of 3: lst_019 at $48
+      out: fair
+      →    $48.00 is fair — $4.00 above the $44.00 median of 3 comparable listings ($20.00–$55.00, same category).
+[8] select_item
+      in:  candidate 3 of 3
+      out: Platform Sneakers — White Chunky Sole ($48.0, poshmark)
+      →    session['selected_item']['id'] = lst_019
+[9] suggest_outfit
+      in:  selected_item id = lst_019 (read back from session), wardrobe items = 10
+      out: **Outfit 1** Pair the platform sneakers with the baggy straight-leg jeans, dark wash and the black cropped zip…
+[10] create_fit_card
+      in:  outfit = 526 chars, selected_item id = lst_019
+      out: These stark white platform sneakers have that heavy-bottomed late-90s energy that makes baggy denim actually w…
+
+  Found:    Platform Sneakers — White Chunky Sole — $48 on poshmark
+  Price:    $48.00 is fair — $4.00 above the $44.00 median of 3 comparable listings ($20.00–$55.00, same category).
+  Skipped:  2 overpriced matches ranked above it
+
+  Outfit:   **Outfit 1**
+Pair the platform sneakers with the baggy straight-leg jeans, dark wash and the black cropped zip hoodie. The cropped zip hoodie balances the heavy volume of the baggy denim, while the white chunky sole bridges the gap between the streetwear silhouette and the footwear. 
+
+**Outfit 2**
+Wear the platform sneakers with the wide-leg khaki trousers and the white ribbed tank top. The stark white sneakers echo the clean tank top to brighten up the earthy khaki, creating an effortless late-90s minimalist proportion.
+
+  Fit card: These stark white platform sneakers have that heavy-bottomed late-90s energy that makes baggy denim actually work. I scored them on poshmark for $48 and immediately paired them with khaki trousers for an effortless, grounded silhouette.
+
+0 model calls this session, 2 served from cache
+```
+
+### The four tools, tested one at a time
+
+**1. `search_listings`** — the price ceiling holds across every result, and the
+empty case is `[]`:
+
+```
+$ python -c "from tools import search_listings; [print(f\"{r['id']}  ${r['price']:<6} {r['size']:<8} score={r['match_score']}  {r['title']}\") for r in search_listings('graphic tee', max_price=30)]"
+lst_006  $24.0   L        score=6.0  Graphic Tee — 2003 Tour Bootleg Style
+lst_002  $18.0   S/M      score=5.0  Y2K Baby Tee — Butterfly Print
+lst_033  $19.0   L        score=5.0  Vintage Band Tee — Faded Grey
+lst_015  $26.0   L        score=3.0  Vintage Graphic Hoodie — Faded Black
+lst_017  $15.0   S/M      score=2.0  Mesh Long-Sleeve Top — Black
+lst_012  $20.0   XL (fits oversized) score=1.0  Oversized Crewneck Sweatshirt — Vintage Navy
+lst_011  $27.0   W29      score=1.0  Low-Rise Cargo Pants — Khaki
+
+empty case: []
+```
+
+**2. `suggest_outfit`** — names pieces from the wardrobe, as written:
+
+```
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[1], get_example_wardrobe()))"
+**Outfit 1**
+Pair the Y2K Baby Tee — Butterfly Print with the baggy straight-leg jeans, dark wash and the chunky white sneakers. Finish with the brown leather belt. This combination plays with silhouette proportions by balancing the ultra-fitted baby tee with loose-fitting bottoms, keeping the color palette grounded with the dark denim.
+
+**Outfit 2**
+Layer the vintage black denim jacket (Slightly cropped) over the Y2K Baby Tee — Butterfly Print, paired with the wide-leg khaki trousers and the black combat boots (Lace-up, mid-ankle height). This look contrasts the soft, feminine butterfly graphic with rugged boots and structured trousers for an edgy Y2K street style.
+```
+
+**3. `create_fit_card`**:
+
+```
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('Baby tee with baggy dark-wash jeans and chunky white sneakers.', load_listings()[1]))"
+Found the absolute dreamiest Y2K butterfly baby tee, complete with lilac and pink graphics that scream early 2000s mall culture. I’m leaning all the way into the contrast by pairing it with heavy dark-wash denim and chunky white sneakers for that perfect heavy-top, loose-bottom silhouette. Snag this piece over on my depop right now for eighteen dollars before I change my mind and keep it.
+```
+
+**4. `compare_prices`** (stretch) — the same seven keys on a real verdict and on
+the unknown path:
+
+```
+$ python -c "from tools import compare_prices; from utils.data_loader import load_listings; import json; print(json.dumps(compare_prices([l for l in load_listings() if l['id']==\"lst_022\"][0]), indent=2, ensure_ascii=False))"
+{
+  "verdict": "overpriced",
+  "comparable_count": 7,
+  "median_price": 40.0,
+  "min_price": 27.0,
+  "max_price": 52.0,
+  "delta_vs_median": 35.0,
+  "summary": "$75.00 is overpriced — $35.00 above the $40.00 median of 7 comparable listings ($27.00–$52.00, same category and a shared style tag)."
+}
+
+empty case: {"verdict": "unknown", "comparable_count": 0, "median_price": null, "min_price": null, "max_price": null, "delta_vs_median": null, "summary": "No item to price-check."}
+```
+
+### Two things worth recording from these runs
+
+**The fit card wrote the price as words.** In the `create_fit_card` test above,
+the caption ends "for eighteen dollars" rather than "$18". Criterion 4 requires
+the price "as a number", so that try would score FAIL. It is in the prompt twice
+as `$18`, and the model spelled it out anyway. I have left the criterion where
+it is — diagnosing this is unit 4's job, and lowering a target to meet it is
+not a revision.
+
+**Keyword matching on the seller's description pulls in the wrong garments.**
+`search_listings('graphic tee')` returns `lst_017` (a mesh top) and `lst_011`
+(cargo pants) at the bottom of the ranking, because both descriptions mention
+layering "under a graphic tee". Worse, `lst_012`'s description reads "no
+graphics, clean" — and matches `graphic`, because a substring test cannot see a
+negation. Both rank low enough that the loop never selects them, so this costs
+nothing today. It is the most likely cause if criterion 1 misses next unit.
 
 ---
 
 ## How I Used AI
 
-<!-- Filled in at Milestone 6. -->
+I built this with Claude Code (Opus) driving the implementation, in one
+session, with me directing what to build and reviewing the output at each
+milestone. The two moments below are the ones where what came back changed a
+decision rather than just saving typing.
+
+**Moment 1 — the size filter**
+
+- *What I asked for:* Before writing `search_listings`, I asked for a survey of
+  every distinct `size` value in `listings.json` and for the specific ways a
+  naive size filter would go wrong against that data.
+- *What came back:* 22 distinct size strings across four scales that do not
+  compare — letter (`S`, `M`, `S/M`, `XL (oversized)`), waist (`W27`–`W32`,
+  `W30 L30`), US shoe (`US 7`–`US 9`), and three spellings of one-size. Plus
+  two concrete false positives: `"s" in "us 9"` is `True`, so a request for a
+  small top returns shoes, and `"l" in "xl"` is `True`, so a request for L
+  returns XL.
+- *What I changed:* I wrote the family-scoped matching rule into the Tool
+  Inventory spec *before* any code existed, instead of discovering it as a bug
+  in Milestone 5. `_size_family()` classifies both sides and only matches
+  within a family, with One Size matching everything. Then I had 18 assertions
+  written covering every trap case, which is what `notes/data-notes.md`
+  records. All 18 pass.
+
+**Moment 2 — the trace printed on every run**
+
+- *What I asked for:* I asked for the loop to be run both ways — once plain and
+  once with `--trace` — to check the flag actually did something, before I
+  pasted anything into Sample Run.
+- *What came back:* Identical output. The starter's `trace.step()` calls
+  `print()` unconditionally, so once I had added trace calls inside
+  `run_agent()`, every ordinary run dumped ten steps of diagnostics at the
+  user, and `--trace` changed nothing at all.
+- *What I changed:* I had `trace.py` take a `_printing` flag that `start_trace()`
+  sets, so steps are always *recorded* — `get_trace()` still returns everything
+  — but only *printed* when a trace was deliberately started. `app.py` calls
+  `start_trace()` only for `--trace`; `agent.py`'s `__main__` calls it because
+  watching the loop is the whole point of running that file directly. This is
+  the one starter file I modified, and it is why the Sample Run output above is
+  readable.
+
+**Two smaller ones, for completeness:** running `create_fit_card` three times
+with `AI201_CACHE=0` is what showed the captions were genuinely varying rather
+than being served from cache; and whole-dollar prices were reaching the model
+as `18.0`, which it copied into captions as "$18.0", until a `_money()` helper
+formatted them.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
