@@ -384,55 +384,63 @@ nothing today. It is the most likely cause if criterion 1 misses next unit.
 
 ## How I Used AI
 
-I built this with Claude Code (Opus) driving the implementation, in one
-session, with me directing what to build and reviewing the output at each
-milestone. The two moments below are the ones where what came back changed a
-decision rather than just saving typing.
+Two different things, and it's worth keeping them apart.
 
-**Moment 1 — the size filter**
+**AI inside the app.** Two of my four tools call a model at runtime, because
+that's the assignment: `suggest_outfit` and `create_fit_card` both go through
+`generate()` to Gemini. The other two, `search_listings` and `compare_prices`,
+are plain Python with no model anywhere in them. That split is deliberate and
+it's why I can test half of this agent exactly — the no-model half gives the
+same answer every time, so when something changes between runs I already know
+which half it came from.
 
-- *What I asked for:* Before writing `search_listings`, I asked for a survey of
-  every distinct `size` value in `listings.json` and for the specific ways a
-  naive size filter would go wrong against that data.
-- *What came back:* 22 distinct size strings across four scales that do not
-  compare — letter (`S`, `M`, `S/M`, `XL (oversized)`), waist (`W27`–`W32`,
-  `W30 L30`), US shoe (`US 7`–`US 9`), and three spellings of one-size. Plus
-  two concrete false positives: `"s" in "us 9"` is `True`, so a request for a
-  small top returns shoes, and `"l" in "xl"` is `True`, so a request for L
-  returns XL.
-- *What I changed:* I wrote the family-scoped matching rule into the Tool
-  Inventory spec *before* any code existed, instead of discovering it as a bug
-  in Milestone 5. `_size_family()` classifies both sides and only matches
-  within a family, with One Size matching everything. Then I had 18 assertions
-  written covering every trap case, which is what `notes/data-notes.md`
-  records. All 18 pass.
+I also used `generate.token_counts()` to get the real cost of a run from what
+the service reported, rather than estimating it off a pricing page.
 
-**Moment 2 — the trace printed on every run**
+**AI as a coding tool.** I used Claude Code to write Python from specs I'd
+already decided on — the tool signatures in my Tool Inventory, the size-family
+rules, the loop structure — and for the ordinary work of boilerplate, syntax
+and tracking down bugs. It was quicker than typing it myself and it caught slips
+I'd have spent an evening on. What it did not do is decide what this agent is,
+what the tools return, where the branches go, or what "working" means for it.
+Those are in `criteria.md` and the Tool Inventory, and they're mine.
 
-- *What I asked for:* I asked for the loop to be run both ways — once plain and
-  once with `--trace` — to check the flag actually did something, before I
-  pasted anything into Sample Run.
-- *What came back:* Identical output. The starter's `trace.step()` calls
-  `print()` unconditionally, so once I had added trace calls inside
-  `run_agent()`, every ordinary run dumped ten steps of diagnostics at the
-  user, and `--trace` changed nothing at all.
-- *What I changed:* I had `trace.py` take a `_printing` flag that `start_trace()`
-  sets, so steps are always *recorded* — `get_trace()` still returns everything
-  — but only *printed* when a trace was deliberately started. `app.py` calls
-  `start_trace()` only for `--trace`; `agent.py`'s `__main__` calls it because
-  watching the loop is the whole point of running that file directly. This is
-  the one starter file I modified, and it is why the Sample Run output above is
-  readable.
+Two cases where running a check changed a decision before I wrote code:
 
-**Two smaller ones, for completeness:** running `create_fit_card` three times
-with `AI201_CACHE=0` is what showed the captions were genuinely varying rather
-than being served from cache; and whole-dollar prices were reaching the model
-as `18.0`, which it copied into captions as "$18.0", until a `_money()` helper
-formatted them.
+**The size filter.** Before writing `search_listings` I had a script written to
+list every distinct `size` value in `listings.json` and show me how a naive
+filter would behave against it. There are 22 distinct size strings across four
+scales that don't compare: letters (`S`, `M`, `S/M`, `XL (oversized)`), waist
+(`W27`–`W32`, `W30 L30`), US shoe (`US 7`–`US 9`), and three spellings of
+one-size. Two things jumped out: `"s" in "us 9"` is `True`, so asking for a
+small top returns shoes, and `"l" in "xl"` is `True`, so asking for L returns
+XL. I decided on family-scoped matching off the back of that and wrote it into
+the Tool Inventory spec *before* any code existed, instead of finding it as a
+bug in Milestone 5. `_size_family()` sorts both sides into a family and only
+matches inside one, with One Size matching everything. Then I had 18 assertions
+written covering every trap case; `notes/data-notes.md` records them and all 18
+pass.
+
+**The trace printed on every run.** I ran the loop twice, once plain and once
+with `--trace`, to check the flag actually did something before I pasted
+anything into Sample Run. The output was identical. The starter's
+`trace.step()` calls `print()` no matter what, so once I'd added trace calls
+inside `run_agent()`, every ordinary run dumped ten steps of diagnostics at the
+user and `--trace` meant nothing. I fixed it by having `trace.py` keep a
+`_printing` flag that `start_trace()` sets, so steps are always *recorded* —
+`get_trace()` still returns all of them — but only *printed* when a trace was
+started on purpose. `app.py` starts one only for `--trace`; `agent.py`'s
+`__main__` always starts one, because watching the loop is the entire reason to
+run that file directly. This is the one starter file I changed, and it's why the
+Sample Run output above is readable.
+
+**Two smaller ones:** running `create_fit_card` three times with `AI201_CACHE=0`
+is how I confirmed the captions were really varying rather than being served
+from the cache; and whole-dollar prices were reaching the model as `18.0`, which
+it copied into captions as "$18.0", until I added a `_money()` helper.
 
 **Unit 4 continues this section** — see
-[How I Used AI, unit 4](#how-i-used-ai--unit-4) at the end, which covers using
-it to argue the opposite verdict and to find the bug in my own scorer.
+[How I Used AI, unit 4](#how-i-used-ai--unit-4) at the end.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════ -->
 
@@ -440,60 +448,61 @@ it to argue the opposite verdict and to find the bug in my own scorer.
 
 ## How This Unit Was Tested
 
-Three things about the method, because they decide how every number below
+Three things about how I ran this, because they change how every number below
 should be read.
 
-**What counts as one try.** Four of the five criteria ask about *several
-different queries* — "for 5 different matching queries", "across 5 fit cards
-generated for 5 different items", "for 5 queries that each name a price
-ceiling". So a try is one repetition of a criterion's whole scenario set, and a
-try passes only if every query in the set passed on that repetition. Five
-repetitions of a five-query set is 25 runs, not 5. The repetition is what
-exposes model variance; the set is what the criterion actually asks about. A
-criterion saying "every card contains the price" is not satisfied by four cards
-out of five, so a repetition in which one card dropped the price is a failed
-try rather than four fifths of one. Full reasoning is in the header of
-`scenarios.py`.
+**What counts as one try.** Four of my five criteria ask about *several
+different queries*, not one query run several times — "for 5 different matching
+queries", "across 5 fit cards generated for 5 different items", "for 5 queries
+that each name a price ceiling". So a try is one full pass through a criterion's
+whole set of scenarios, and a try only passes if every query in that set passed
+on that pass. Five passes over a five-query set is 25 runs, not 5. The repeating
+is what shows me where the model varies, and the set of five is what the
+criterion is actually asking about. A criterion saying "every card contains the
+price" isn't satisfied by four cards out of five, so a pass where one card
+dropped the price is a failed try and not four fifths of one. The longer version
+of this reasoning is at the top of `scenarios.py`.
 
-**One scenario set serves four criteria.** Criteria 1, 3, 4 and 5(a) are all
-measured on the same five matching queries, because the set was built to
-satisfy all four at once: each query names a price ceiling, each matches at
-least one listing, and the five select five *distinct* items in five distinct
-categories. Which item each query selects was checked against the data before
-the queries were written down — `search_listings` and `compare_prices` are both
-deterministic, so that is knowable without spending a model call. Two of the
-five are chosen for the loop path they exercise rather than the item: the jeans
-query rejects a candidate and re-plans, and the mary janes query finds every
-candidate overpriced and so is the only scenario that reaches the loop's `else`
-clause.
+**One set of five queries covers four criteria.** Criteria 1, 3, 4 and 5(a) all
+run on the same five matching queries, because I built the set to satisfy all
+four at once: each query names a price limit, each one actually matches
+something, and the five of them pick five *different* items in five different
+categories. I worked out which item each query picks before writing them down —
+`search_listings` and `compare_prices` give the same answer every time, so I
+could figure that out without spending a single model call. Two of the five are
+in there for the path they take rather than the item: the jeans query makes the
+loop reject a candidate and go round again, and the mary janes query makes every
+candidate come out overpriced, so it's the only scenario that reaches the last
+part of my loop.
 
-**The verdicts are computed, not eyeballed.** `run_eval.py` deliberately leaves
-the PASS/FAIL columns blank. `score.py` fills them in by applying `criteria.md`.
-That is a deliberate choice and worth defending: the scenario set is 50 runs per
-label, and marking 50 runs by hand is not a test of the agent but a test of
-whether I still remember on row 40 what I decided on row 3 — and the direction
-that drift reliably runs in is the one that flatters the agent. Every clause of
-every criterion is quoted in a docstring next to the code that checks it, so the
-mapping is auditable. Three clauses needed interpreting before they could be
-executed at all; each is marked `INTERPRETATION` in `score.py` and the one that
-changes a verdict is argued out below.
+**The verdicts are worked out in code, not by eye.** `run_eval.py` leaves the
+PASS/FAIL columns blank on purpose. `score.py` fills them in by checking
+`criteria.md`. I did it that way for a reason worth saying out loud: my scenario
+set is 50 runs per measurement, and marking 50 runs by hand isn't really a test
+of my agent, it's a test of whether I still remember on row 40 what I decided on
+row 3 — and if I drift, I know which way I'll drift, because the flattering
+answer is always sitting right there. Every part of every criterion is quoted in
+a comment next to the code that checks it, so anyone can compare the two and
+tell me I read it wrong. Three parts needed me to decide what they meant before
+I could check them at all; each one says so in `score.py`, and the one that
+actually changes a verdict I argue out below.
 
-The judgement is still mine. It is written in code instead of in my head, which
-makes it re-runnable and makes it possible to disagree with.
+The judgement is still mine. It's written in code instead of in my head, which
+means I can re-run it and other people can see what I did.
 
-**The scorer was tested too, because it is part of the apparatus.** The first
-version of `score.py` returned MET on all five criteria. That is exactly when an
-instrument deserves suspicion, so I ran nine deliberately corrupted runs through
-it — a blanked fit card, a branch that walks past itself, an off-by-one in the
-trace ids, a card describing the wrong candidate, a missing platform, a missing
-price, five identical openings, a result above the ceiling, an unactionable
-empty message. It caught eight and **missed one**, and the reason it missed was
-a real bug: it matched title words as substrings, so `hat` inside `that` counted
-as naming a bucket hat, and `tee` — shared by three candidates in one result
-set — counted as identifying any of them. Part of that clean sweep was the
-scorer being unable to fail. Fixed to whole-word matching, re-run, all nine
-caught. A verdict of MET from a checker with no demonstrated ability to return
-FAIL is not evidence.
+**I tested my checker too, because it's part of the setup.** The first version
+of `score.py` came back MET on all five criteria. That's exactly when I should
+stop trusting a tool, so I built nine runs that I broke on purpose — a blanked
+fit card, a branch that walks straight past itself, an off-by-one in the trace
+ids, a card describing the wrong item, a missing platform, a missing price, five
+identical openings, a result over the price limit, and an empty-search message
+with nothing useful in it. It caught eight and **missed one**, and the reason it
+missed was a real bug: I was comparing title words as pieces of words instead of
+whole words, so "hat" inside "that" counted as naming a bucket hat, and "tee" —
+which three candidates in one search share — identified none of them. So part of
+my clean sweep was just my checker being unable to fail. I fixed it to match
+whole words, re-ran, and all nine got caught. A MET from a checker that has
+never been shown to return FAIL isn't evidence of anything.
 
 ```
 CAUGHT  C1 blank one fit card                    C1: 4/5
@@ -524,18 +533,18 @@ Produced by `run_eval.py::main`, scored by `score.py::score`.
 | 4. The fit card names the item, its price and its platform, every time | 5 of 5 | PASS | PASS | PASS | PASS | PASS | **MET (5/5)** |
 | 5. A stated price ceiling is never exceeded, and the empty-search message is actionable | (a) 5 of 5, (b) 3 of 3 | PASS | PASS | PASS | PASS | PASS | **MET (5/5)** |
 
-Criterion 5 has two parts and the row above is the conjunction of both.
-Separately:
+Criterion 5 has two parts, and the row above only says MET if both of them
+pass. Here they are separately:
 
 | Part | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
 | 5(a) no result above the stated ceiling | 5 of 5 | PASS | PASS | PASS | PASS | PASS | **MET (5/5)** |
 | 5(b) the empty-search message quotes a constraint | 3 of 3 | PASS | PASS | PASS | n/a | n/a | **MET (3/3)** |
 
-5(b)'s target is 3 of 3 for three *different* kinds of empty, so a try there is
-a query rather than a repetition. The path makes no model call, so every
-repetition should be identical; `score.py` asserts that rather than assuming it,
-and all five repetitions of all three queries agreed.
+5(b)'s target is 3 of 3 across three *different* kinds of empty, so a try there
+means a query rather than a pass. That path never calls the model, so all five
+passes should come out identical. `score.py` checks that instead of assuming it,
+and all five passes of all three queries matched.
 
 ### Real output, one try per criterion
 
@@ -569,7 +578,8 @@ Nothing in the 40 listings matches all of: keywords: designer, ballgown; price a
   To get results, raise the $5 ceiling, drop or widen the size filter (XXS), or use words closer to how a seller would title it — this data runs on terms like vintage, y2k, 90s, graphic tee, denim, oversized, grunge, linen.
 ```
 
-Three steps, and `suggest_outfit` is not one of them. The happy path is eight.
+Three steps, and `suggest_outfit` isn't one of them. The run that works takes
+eight.
 
 **Criterion 3** — the identity check, read from the trace as the criterion
 specifies. Scenario "bottoms — jeans", try 2, which is the scenario that
@@ -594,9 +604,9 @@ rejects a candidate and re-plans:
 ```
 
 `lst_037` on step 6, `lst_037` on step 7, and `lst_037` is in
-`session["search_results"]`. The index advanced past `lst_001` without the
-session and the call drifting apart, which is the exact failure the criterion
-was written for.
+`session["search_results"]`. The loop moved past `lst_001` without the session
+and the actual call getting out of sync, and that's exactly the failure I wrote
+this criterion to catch.
 
 **Criterion 4** — a card carrying price and platform. Scenario "shoes — mary
 janes", try 2, the all-candidates-overpriced path:
@@ -624,8 +634,8 @@ results: lst_039 $38, lst_031 $36, lst_018 $38, lst_035 $20, lst_029 $28,
          lst_021 $29, lst_013 $30, lst_032 $33, lst_025 $34
 ```
 
-Nine results, highest $38, zero violations. Across all 25 ceilinged runs the
-violation count was zero.
+Nine results, the most expensive is $38, nothing over the limit. Across all 25
+runs that named a price limit, nothing went over.
 
 **Criterion 5(b)** — all three kinds of empty, from
 `agent.py::_no_results_message`:
@@ -644,41 +654,42 @@ Nothing in the 40 listings matches all of: keywords: sequined, ballgown.
   To get results, or use words closer to how a seller would title it — ...
 ```
 
-Each quotes a constraint with its value, which is what 5(b) asks for. The third
-one also exposes a grammar bug — "To get results, or use words" — logged under
-What's Still Broken.
+Each one repeats back a filter with its actual value, which is what 5(b) asks
+for. The third one also shows up a grammar bug — "To get results, or use words"
+— which I've written up under What's Still Broken.
 
 ---
 
 ## Verdicts and Diagnoses
 
-Verdicts are against the targets as written in unit 3. Two criteria were revised
-in this unit (`criteria.md`, originals intact above each revision); both
-revisions make the criterion *harder*, and neither is used for the verdicts
-below.
+These are against the targets exactly as I wrote them in unit 3. I revised two
+criteria in this unit (`criteria.md`, with the originals left in place above
+each revision); both revisions make the criterion *harder*, and I'm not using
+either of them for the verdicts here.
 
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 | A matching query completes all three tools | 4 of 5 | **MET (5/5)** | All 5 repetitions of all 5 matching queries completed `search_listings`, `suggest_outfit` and `create_fit_card` and returned a non-empty card that was not the tool's own empty-case string. 25 runs, 0 failures, 0 crashes. |
-| 2 | An impossible query stops before the second tool | 5 of 5 | **MET (5/5)** | 5 of 5. `search_results == []`, no `suggest_outfit` step in the trace, `outfit_suggestion` and `fit_card` both still `None`, and a message that says what to change. Checked the trace rather than the session, so a tool called without being recorded would still have been caught. |
-| 3 | The item the search found is the item the next tool received | 5 of 5 | **MISSED (4/5)** | Failed try 1. The three id clauses passed on all 25 runs — the loop never mixed an item up, including on the re-plan path. The clause that failed is the last one, "the fit card's named item must be that listing's title". 4 of 5 against a 5-of-5 target is a miss. |
-| 4 | The fit card names the item, its price and its platform, every time | 5 of 5 | **MET (5/5)** | All 25 cards stated the price as a number, named the platform, and named the item or its garment type in the first sentence; all were 2–3 sentences and 180–330 characters against a 2–4 and sub-400 bound; and the 5 openings within each try were distinct 5 times out of 5. |
-| 5 | A stated price ceiling is never exceeded, and the empty-search message is actionable | (a) 5 of 5, (b) 3 of 3 | **MET (5/5)** | (a) zero results above the ceiling across 25 runs and 200-odd returned listings, and the parser found the ceiling in every one of the five phrasings. (b) all three messages quote a constraint with its value in all 5 repetitions. |
+| 1 | A matching query completes all three tools | 4 of 5 | **MET (5/5)** | All five passes over all five matching queries got through `search_listings`, `suggest_outfit` and `create_fit_card` and came back with a real card, not the tool's own "no fit card" string. 25 runs, nothing failed, nothing crashed. |
+| 2 | An impossible query stops before the second tool | 5 of 5 | **MET (5/5)** | 5 of 5. `search_results` was empty, there's no `suggest_outfit` step anywhere in the trace, `outfit_suggestion` and `fit_card` were both still `None`, and the message says what to change. I checked the trace rather than the session, so a tool that got called without being recorded would still have been caught. |
+| 3 | The item the search found is the item the next tool received | 5 of 5 | **MISSED (4/5)** | Try 1 failed. The three id checks passed on all 25 runs, so the loop never mixed an item up, including on the path where it rejects a candidate and goes round again. What failed is the last part, "the fit card's named item must be that listing's title". 4 of 5 against a 5-of-5 target is a miss. |
+| 4 | The fit card names the item, its price and its platform, every time | 5 of 5 | **MET (5/5)** | All 25 cards gave the price as a number, named the platform, and named the item or the kind of clothing it is in the first sentence. All of them were 2–3 sentences and 180–330 characters, against a limit of 2–4 sentences and under 400. And the five openings inside each pass were all different, five times out of five. |
+| 5 | A stated price ceiling is never exceeded, and the empty-search message is actionable | (a) 5 of 5, (b) 3 of 3 | **MET (5/5)** | (a) nothing over the price limit across 25 runs and 200-odd returned listings, and my parser found the limit in all five phrasings. (b) all three messages repeat back a filter with its real value, on all five passes. |
 
-**One miss, and it is not where I expected it.** Criterion 4 was the one I
-called "most at risk" in unit 3, on the grounds that 32 of 40 listings have
-`brand` set to `None` and any sentence leaning on the brand would come out as a
-fragment. That turned out to be a risk I had already designed away: the caption
-prompt never passes `brand` at all, and the stylist system prompt says never to
-mention a brand unless given one. The prediction was about a field the prompt
-does not use, so it could not have come true.
+**One miss, and it isn't where I thought it would be.** In unit 3 I called
+criterion 4 "the criterion most at risk", because 32 of the 40 listings have no
+brand and I figured any sentence leaning on the brand would come out as a
+fragment. That turned out to be a risk I'd already designed away without
+noticing: the caption prompt never passes `brand` at all, and the stylist system
+prompt says not to mention a brand unless it's given one. I made a prediction
+about a field the prompt doesn't even use, so it couldn't have come true.
 
 ### Diagnosis: criterion 3, try 1
 
-**Where:** the model's output. Not the tool, not the branch, not the session.
+**Where it happened:** in what the model wrote. Not the tool, not the branch,
+not the session.
 
-**What happened.** On try 1 of the graphic-tee scenario the loop selected
-`lst_033` "Vintage Band Tee — Faded Grey" and the caption came back:
+**What happened.** On try 1 of the graphic tee scenario, the loop picked
+`lst_033` "Vintage Band Tee — Faded Grey" and the caption came back as:
 
 ```
 Charcoal tour tee with that thin, paper-soft cotton you can't fake. Layer it
@@ -687,15 +698,15 @@ it into khaki trousers with heavy boots and a cropped jacket. Grab this faded
 piece for $19 over on depop before I change my mind.
 ```
 
-**The mechanism.** The same search returned `lst_006` "Graphic Tee — 2003 Tour
-Bootleg Style" and `lst_002` "Y2K Baby Tee — Butterfly Print" alongside
-`lst_033`. Of the three words in the selected item's title, `tee` belongs to all
-three candidates; only `band` and `grey` belong to `lst_033` alone. The caption
-uses neither. It uses `tour` — which belongs to `lst_006` and to no other
-listing.
+**Why it happened.** That same search also returned `lst_006` "Graphic Tee —
+2003 Tour Bootleg Style" and `lst_002` "Y2K Baby Tee — Butterfly Print". Of the
+three words in the title of the item that got picked, `tee` belongs to all three
+of those listings — only `band` and `grey` belong to `lst_033` by itself. The
+caption uses neither of them. It uses `tour`, which belongs to `lst_006` and to
+nothing else.
 
-I checked where `tour` came from, because it matters whether the model read it
-somewhere or invented it:
+I checked where `tour` came from, because it matters a lot whether the model
+read it somewhere or made it up:
 
 ```
 'tour' in the outfit suggestion passed to create_fit_card:   False
@@ -703,78 +714,78 @@ somewhere or invented it:
 'tour' in the listing's own description (not passed at all):  False
 ```
 
-It is in none of them. The model inferred it from the style tag `band tee`,
-since band merchandise is tour merchandise, and wrote a word that appears
-nowhere in the prompt. Simultaneously it dropped `band`, the one title word that
-separates this listing from the other two tees on the same results page.
+It's in none of them. The model guessed it from the `band tee` style tag, since
+band merch is tour merch, and wrote a word that appears nowhere in anything I
+sent it. At the same time it dropped `band`, which is the one word in that title
+that tells this listing apart from the other two tees on the same page of
+results.
 
-The fault is in the prompt, and in one line of it. `tools.py::create_fit_card`
-said:
+So the problem is in the prompt, and in one line of it.
+`tools.py::create_fit_card` used to say:
 
 ```
 - Name the item or what kind of thing it is in the first sentence.
 ```
 
-"or what kind of thing it is" is an explicit licence to paraphrase, and the
-model took it. The tool worked, the loop worked, the session was consistent
-throughout — all three ids agreed on this very run. What failed is that the
-user-facing caption, the only part of the run a user ever sees, described a
-different listing from the one being sold to them.
+That "or what kind of thing it is" is me handing the model permission to reword
+things, and it took it. The tool worked. The loop worked. The session was
+consistent the whole way through — all three ids agreed on this exact run. What
+failed is that the caption, which is the only part of any of this that a user
+actually reads, described a different item than the one it was selling them.
 
-**Why this counts as a miss rather than a quibble.** This is the one place a
-reading of the criterion changes a verdict, so the reasoning is worth stating.
-Criterion 3's last clause is "the fit card's named item must be that listing's
-title". Read literally — the card contains the title verbatim — it fails
-essentially every caption, because "Vintage Band Tee — Faded Grey" is a listing
-title and not a sentence. Read loosely — the card shares any word with the
-title — it passes this card, because `tee` is in it, and would equally pass a
-card that was unmistakably about one of the other two tees.
+**Why I'm calling this a miss and not nitpicking.** This is the one place where
+how I read a criterion changes the verdict, so I should show my work. Criterion
+3's last part says "the fit card's named item must be that listing's title".
+Read completely literally — the card contains the title word for word — that
+fails basically every caption anyone has ever written, because "Vintage Band Tee
+— Faded Grey" is a listing title, not a sentence. Read loosely — the card shares
+any word at all with the title — it passes this card, because `tee` is in there,
+and it would just as happily pass a card that was obviously about one of the
+other two tees.
 
-Neither reading is usable, so the clause is read for what `criteria.md` says it
-is *for*: "an off-by-one there would style candidate *n* while having written
+Neither of those is usable, so I read it for what I said in `criteria.md` it was
+*for*: "an off-by-one there would style candidate *n* while having written
 candidate *n+1* into the session ... nothing in the user-facing output would
-look wrong". That purpose makes the question "of the candidates the search
-returned, which one is this card describing?" — so the card must use at least
-one word belonging to the selected listing and to no other candidate, and must
-not fit a rival better. This is the strictest of the three readings and the only
-one able to detect the bug the criterion says it exists to detect.
+look wrong". If that's the point, then the question isn't "does the card mention
+this item" but "out of the items the search returned, which one is this card
+describing?" So the card has to use at least one word that belongs to the chosen
+listing and to none of its neighbours, and it mustn't fit a neighbour better.
+That's the strictest of the three readings and it's the only one that can
+actually catch the bug I said this criterion was there to catch.
 
-Under the loose reading criterion 3 scores **5/5 MET**; under this one it scores
-**4/5 MISSED**. Both numbers are stated here so the choice is visible rather
-than buried. I use the strict one.
+Under the loose reading criterion 3 scores **5/5 MET**. Under mine it scores
+**4/5 MISSED**. I'm putting both numbers here so the choice is out in the open
+rather than buried in a file. I'm going with the strict one.
 
 ### The pattern
 
-There is only one miss, so there is no pattern across misses. There is a
-pattern across the *near* misses, and it is the one worth naming: every
-remaining weakness in this agent is in the caption prompt, and none is in the
-loop.
+There's only one miss, so there's no pattern across misses. There is a pattern
+across the *near* misses, and it's the one worth pointing at: everything still
+weak in this agent is in the caption prompt, and none of it is in the loop.
 
-- Criterion 3's failure is the caption dropping the word that identifies the item.
-- Criterion 4 passed, but its distinct-openings clause passed *trivially*, and a
-  measurement the clause does not make shows the same prompt producing "Scored
-  these perfectly faded black straight-leg jeans on thredUp" verbatim on two
-  separate tries of the same item.
+- Criterion 3 failed because the caption dropped the word that identifies the item.
+- Criterion 4 passed, but its "five different openings" part passed *too easily*,
+  and a measurement that part doesn't make shows the same prompt producing
+  "Scored these perfectly faded black straight-leg jeans on thredUp" word for
+  word on two separate tries of the same item.
 - Criterion 1 passed, but the thing its 4-of-5 target was justified by is a
-  property of `search_listings` that the clause's own precondition excludes.
+  property of `search_listings` that the criterion's own wording rules out.
 
-The loop, the branches, the session and the two deterministic tools did not
-produce a single failure in 50 runs. Everything that went wrong, and everything
-that nearly went wrong, happened in the one place where a model writes prose
-that a user reads.
-
----
+The loop, both branches, the session and my two no-model tools didn't produce a
+single failure in 50 runs. Everything that went wrong, and everything that
+nearly went wrong, happened in the one place where a model writes sentences a
+person reads.
 
 ## Loop Trace
 
-One full run, step by step, with the MCP call visible at step 2. Both traces
-are lifted from the recorded test run in `results/`, not re-staged for the
-write-up. `trace.step()` calls live in `agent.py::run_agent`; formatting is
-`trace.py`.
+One full run, step by step, with the MCP call showing up at step 2. Both traces
+are copied straight out of the recorded test run in `results/` — I didn't re-run
+them to make them look nicer for the write-up. The `trace.step()` calls are in
+`agent.py::run_agent` and the formatting is `trace.py`.
 
-**Happy path** — scenario "bottoms — jeans", try 2. This is the run that
-exercises the second branch: candidate 1 is judged overpriced, rejected, and
-the loop goes round again.
+**A run that works** — scenario "bottoms — jeans", try 2. This is the one that
+uses my second branch: candidate 1 comes out overpriced, gets rejected, and the
+loop goes round again.
 
 ```
 [1] parse_query
@@ -806,11 +817,12 @@ the loop goes round again.
       out: Scored these faded black straight leg jeans on thredUp for $30. They have that perfectly worn-in grunge feel t…
 ```
 
-Step 2 is the MCP call. Steps 3–5 are the loop deciding, not a script running:
-the number of iterations comes from the data, because `lst_001` had to be
-rejected before `lst_037` could be reached. Step 7's input is read back *out of*
-the session rather than reusing the loop variable, which is what makes criterion
-3 checkable at all.
+Step 2 is the MCP call. Steps 3 to 5 are the loop actually deciding something
+rather than a script running top to bottom — how many times it goes round
+depends on the data, because `lst_001` had to get rejected before it could reach
+`lst_037`. Step 7 reads its input back *out of* the session instead of reusing
+the loop variable, and that's the only reason criterion 3 can be checked at
+all.
 
 **Empty search** — scenario "impossible query", try 1:
 
@@ -826,8 +838,8 @@ the session rather than reusing the loop variable, which is what makes criterion
       →    stopping before suggest_outfit — nothing to style
 ```
 
-Three steps against eight, and neither model-calling tool appears. The two
-traces being different lengths is the branch working.
+Three steps instead of eight, and neither of the tools that call the model shows
+up. The two traces being different lengths is how I know the branch works.
 
 **On the MCP move.**
 
@@ -839,16 +851,18 @@ all; it calls it by name over stdio through `mcp_client.call_tool`, wrapped in
 `agent.py::_search_over_mcp`. The other three tools stay direct calls, so the
 seam is visible: one tool crosses a process boundary and three do not.
 
-Writing the description was the part that was not code. It is addressed to a
-caller that will never see `tools.py`, so it has to carry what the Tool
-Inventory used to carry for me: that `max_price` is inclusive and in whole
-dollars, that sizes span four incompatible scales and a listing only matches
-inside its own, that `brand` is `null` on 32 of the 40 listings, and that an
-empty array means "no stock for these constraints" rather than an error. Last
-unit the empty case was a note to myself. Here it is a contract.
+Writing the description was the part that wasn't code. It's aimed at somebody
+whose agent will never see my `tools.py`, so it has to carry everything the Tool
+Inventory used to carry for me: that `max_price` means "or cheaper" and is in
+whole dollars, that the sizes come in four kinds that don't compare and a
+listing only matches inside its own kind, that `brand` is null on 32 of the 40
+listings, and that an empty list means "nothing in stock for this" rather than
+an error. Last unit the empty case was a note to myself. Here it's a promise to
+someone else.
 
-Checking the inputs against the README found no mismatch, which I did not
-expect — the types in the Tool Inventory and the type hints agreed.
+When I compared the inputs against my README I expected to find a mismatch and
+didn't — the types in my Tool Inventory and the type hints in the code already
+agreed.
 
 **Did anything behave differently?** No, and I checked rather than assuming.
 Direct call and MCP call, same arguments, diffed:
@@ -861,33 +875,35 @@ equal  : True
 empty case over MCP: []
 ```
 
-Byte-identical, including the empty list. The reason that is not automatic is
-in `mcp_client._unwrap`: the protocol hands back content blocks, so without
-that step the loop would have started seeing a JSON string where it used to see
-a list, and `if not session["search_results"]` would have been testing a
-non-empty string for emptiness and silently never branching.
+Exactly the same, right down to the empty list. That isn't automatic, and the
+reason is in `mcp_client._unwrap`: MCP hands things back as content blocks, so
+without that step my loop would have started getting a string where it used to
+get a list. Then `if not session["search_results"]` would have been checking
+whether a non-empty string is empty, and my branch would have quietly stopped
+firing without ever erroring.
 
-What *did* change is the failure surface. A direct call cannot fail to be
-reached; a subprocess can. `_search_over_mcp` raises `SearchUnavailable` both
-when the server cannot be reached and when it returns something that is not a
-list, and the second guard matters more than it looks: `None` is falsy, so a
-transport fault that returned nothing would have been read by the empty-search
-branch as "nothing in the catalogue matches" and reported to the user as a
-shopping result. That failure mode did not exist last unit and it is the only
-thing the move made worse.
+What *did* change is the number of ways this can break. A function call can't
+fail to be reached; a separate program can. `_search_over_mcp` raises
+`SearchUnavailable` both when it can't reach the server and when it gets back
+something that isn't a list. That second check matters more than it looks:
+`None` counts as empty in Python, so a broken connection that returned nothing
+would have been read by my empty-search branch as "nothing in the catalogue
+matches" and told the user that as though it were a real shopping result. That
+way of failing didn't exist last unit, and it's the one thing the MCP move made
+worse.
 
 ---
 
 ## Failure Modes, Triggered on Purpose
 
-Four, not three. The three the unit names, plus the one the MCP move
-introduced. Each was triggered deliberately rather than waited for, and each
-message below is the real text, copied from the terminal.
+Four of them, not three — the three the assignment names, plus the one that came
+with the MCP move. I triggered each one on purpose instead of waiting to run
+into it, and every message below is the real text copied out of my terminal.
 
-The test I applied to each message is the one from the unit brief: could
-somebody who cannot see the code read this and know what to do next? Two of
-the four already passed it. One passed on the message and failed on everything
-around the message. One did not exist last unit.
+The test I used on each message is the one from the assignment: could somebody
+who can't see my code read this and know what to do next? Two of the four
+already passed that. One had a fine message but failed at everything around the
+message. One didn't exist last unit.
 
 ### 1. Empty search — already handled, no change needed
 
@@ -910,9 +926,10 @@ python app.py ask 'designer ballgown size XXS under $5' --trace
   To get results, raise the $5 ceiling, drop or widen the size filter (XXS), or use words closer to how a seller would title it — this data runs on terms like vintage, y2k, 90s, graphic tee, denim, oversized, grunge, linen.
 ```
 
-Produced by `agent.py::_no_results_message`. It names all three constraints
-with their values and then names three specific things to change, so there is
-something to act on without reading any code. No handler added.
+This comes from `agent.py::_no_results_message`. It lists all three filters with
+their real values and then names three specific things you could change, so
+there's something to actually do without reading any of my code. I didn't add a
+handler for this one.
 
 ### 2. Empty wardrobe — already handled, no change needed
 
@@ -931,11 +948,11 @@ Pair this cropped jacket with high-waisted wide-leg trousers or a ribbed midi sk
   Fit card: This faded light-wash cropped denim jacket has that perfectly broken-in vintage feel. Snagged it on Poshmark for $42. Throw it over a ribbed midi skirt for weekend coffee runs without leaning into a stiff Canadian tuxedo vibe.
 ```
 
-Produced by the empty-wardrobe branch of `tools.py::suggest_outfit`. Advice,
-not a crash and not an empty string, and the first line says why the advice is
-general — the user is told the cause of the difference rather than left to
-notice it. The run still completes and still produces a fit card. No handler
-added.
+This comes from the empty-wardrobe branch of `tools.py::suggest_outfit`. It's
+advice, not a crash and not a blank string, and the first line explains why the
+advice is general instead of leaving the user to work that out. The run still
+finishes and still writes a fit card. I didn't add a handler for this one
+either.
 
 ### 3. Model unavailable — this one needed a handler
 
@@ -958,18 +975,18 @@ not:
 ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
 ```
 
-Two defects, neither of them the wording.
+Two problems, and neither of them is the wording.
 
-The trace stops at step 4. The run went wrong at step 5, and step 5 is not in
-the trace — the one piece of evidence a trace exists to provide was missing at
-exactly the point it was needed. That is worse than a bad message, because a
-bad message at least tells you something happened.
+The trace stops at step 4. The run went wrong at step 5, and step 5 isn't in the
+trace at all — the one thing a trace exists to show me was missing at exactly
+the moment I needed it. That's worse than a bad message, because a bad message
+at least tells you something happened.
 
-And the agent had already found a $22 Crochet Halter Top and price-checked it
-as fair. Search and `compare_prices` make no model call, so both of those are
-established facts, not guesses. They were thrown away with the exception,
-because the only thing catching `ModelUnavailable` was the blanket
-`except Exception` in `app.py::main`, which has no access to the session.
+And my agent had already found a $22 Crochet Halter Top and checked its price as
+fair. Search and `compare_prices` don't call the model, so both of those are
+things I actually know, not guesses. They got thrown away with the error,
+because the only thing catching `ModelUnavailable` was the catch-all
+`except Exception` in `app.py::main`, and that has no access to the session.
 
 **After the handler** (`agent.py::_model_down_message`, with the catch around
 steps 3 and 4 of `run_agent`):
@@ -991,17 +1008,17 @@ steps 3 and 4 of `run_agent`):
   To try: fix the key or the connection above, then run the same query again — the search will return the same item, so nothing is lost by retrying.
 ```
 
-The failure is now a trace step, and the deterministic half of the run
-survives it. The key was put back immediately afterwards; `git diff` on `.env`
-is empty because `.env` is gitignored, so the only record that it was ever
-broken is this section.
+Now the failure is its own trace step, and the half of the run that doesn't need
+the model survives it. I put my key back straight afterwards. `git diff` on
+`.env` is empty because `.env` is gitignored, so this section is the only record
+that I ever broke it.
 
-`QuotaGuard` is caught by the same handler. It is a different cause with the
-same shape — the model call did not happen — and it would have hidden the
-session in exactly the same way.
+The same handler catches `QuotaGuard`. It's a different cause with the same
+shape — the model call didn't happen — and it would have hidden the session in
+exactly the same way.
 
-**The handler then caught one for real, which I did not arrange.** On the last
-end-to-end check before submitting, the service returned a genuine 503:
+**Then it caught a real one that I didn't set up.** On my last check before
+submitting, the service came back with an actual 503:
 
 ```
 [5] suggest_outfit
@@ -1018,20 +1035,20 @@ end-to-end check before submitting, the service returned a genuine 503:
   To try: fix the key or the connection above, then run the same query again — the search will return the same item, so nothing is lost by retrying.
 ```
 
-A different cause from the bad key — nothing to do with the user, nothing they
-can fix — and the handler written for the bad key carried it anyway, because it
-reports what broke and what survived rather than guessing why. The one line that
-is now wrong in this case is "fix the key or the connection", which is the wrong
-advice for a server-side outage; the right next action is simply to wait. That
-is a sharper version of the same handler I would write next: branch the "to try"
-line on whether the cause was authentication or availability.
+Completely different cause from the bad key — nothing to do with the user and
+nothing they can fix — and the handler I wrote for the bad key carried it
+anyway, because it reports what broke and what survived instead of guessing why.
+The one line that's wrong here is "fix the key or the connection", which is bad
+advice when the server is just down; the right thing to do is wait. If I wrote
+this handler again I'd split that last line depending on whether the problem was
+the key or the service being unavailable.
 
 ### 4. MCP server unreachable — the failure mode the move introduced
 
-This one did not exist last unit. Before Milestone 1 a broken search was a
-Python exception inside one process. Now it is a subprocess that might not
-start, a handshake that might not complete, and a tool name that might not be
-registered. Triggered by pointing `mcp_client.SERVER` at a file that is not
+This one didn't exist last unit. Before Milestone 1, a broken search was just an
+error inside my own program. Now it's a separate program that might not start,
+a connection that might not go through, and a tool name that might not be
+registered. I triggered it by pointing `mcp_client.SERVER` at a file that isn't
 there:
 
 ```
@@ -1047,26 +1064,27 @@ If it exits immediately with an error, fix that before coming back here.
   To try: run `python mcp_server.py` on its own — if it exits with an error, that error is the cause. `python mcp_client.py` should list search_listings.
 ```
 
-Produced by `agent.py::_search_over_mcp`. The protocol's own error text
-("unhandled errors in a TaskGroup") is useless on its own, which is the whole
-reason the handler names two commands that locate the fault instead of
-reprinting it and stopping.
+This comes from `agent.py::_search_over_mcp`. The error MCP gives you on its own
+("unhandled errors in a TaskGroup") is useless by itself, which is exactly why
+my handler names two commands that find the real problem instead of just
+reprinting that and giving up.
 
-`_search_over_mcp` also raises `SearchUnavailable` when the server returns
-something that is not a list. That matters more than it looks: the loop's first
-branch tests `search_results` for emptiness, and `None` is falsy, so a
-transport fault that returned nothing would have been read by the branch as "no
-stock matches your query" and reported to the user as a shopping result. A
-broken pipe and an empty catalogue must not look the same to the branch.
+`_search_over_mcp` also raises `SearchUnavailable` when the server sends back
+something that isn't a list. That matters more than it looks. My first branch
+decides what to do by checking whether `search_results` is empty, and `None`
+counts as empty in Python, so a broken connection that returned nothing would
+have been read as "nothing in stock matches your query" and shown to the user
+as a real result. A broken connection and an empty closet can't be allowed to
+look the same to that branch.
 
 ---
 
 ## The Improvement
 
-**Stretch features added in this unit**, declared up front: a second tool was
-*not* moved onto MCP, retry-with-looser-constraints was *not* added, and **a
-second improvement from the diagnosis was**, measured in the same format as the
-first. Three run logs follow: before, after one change, after two.
+**What I'm adding from the stretch list**, said up front: I did *not* move a
+second tool onto MCP and I did *not* add retry-with-looser-constraints. I did
+add **a second fix from my diagnosis, measured the same way as the first**.
+So there are three run logs below: before, after one change, and after two.
 
 ### Improvement 1 — the one the diagnosis named
 
@@ -1088,12 +1106,12 @@ After:
   make clear which one this is.
 ```
 
-**Which failure it was meant to fix.** The only miss: criterion 3, try 1, where
-the caption for `lst_033` read "Charcoal tour tee". The diagnosis put the fault
-on the phrase "or what kind of thing it is", which licenses exactly the
-paraphrase that lost the identifying word. This is the "rewrite one prompt"
-option, and it is the one the diagnosis pointed at rather than the one that was
-easiest.
+**Which failure I was trying to fix.** My only miss: criterion 3, try 1, where
+the caption for `lst_033` said "Charcoal tour tee". My diagnosis blamed the
+phrase "or what kind of thing it is", which gives the model permission to do
+exactly the rewording that lost the identifying word. This is the "rewrite one
+prompt" option from the list, and it's the one my diagnosis pointed at rather
+than the one that would have been easiest.
 
 The same card, before and after:
 
@@ -1128,12 +1146,12 @@ Side by side:
 | 4 | **MET (5/5)** | **MISSED (0/5)** | **broken** |
 | 5 | MET (5/5) | MET (5/5) | — |
 
-**Did it help?** It did exactly what it was aimed at and it made the agent worse
-overall. Criterion 3 went from MISSED to MET and has not failed since. Criterion
+**Did it help?** It did exactly what I aimed it at, and it made my agent worse
+overall. Criterion 3 went from MISSED to MET and hasn't failed since. Criterion
 4 went from a clean 5 of 5 to 0 of 5.
 
-The mechanism of the regression, because "it broke" is not a diagnosis either.
-The price stopped being a number and started being a word:
+Here's why it broke, because "it broke" isn't a diagnosis either. The price
+stopped being a number and started being a word:
 
 ```
 try 1: Scored these thrashed Straight Leg Black Jeans — Faded for thirty bucks
@@ -1144,32 +1162,34 @@ try 3: Scored this perfectly faded vintage band tee over on depop for nineteen
        bucks.
 ```
 
-Five of the 25 cards lost the digits. No card stated a *wrong* price — "thirty
-bucks" for a $30 item is accurate — but criterion 4 asks for the price "as a
-number", and it asks for that because a spelled-out price stops being accurate
-the moment a listing is not a round number of dollars. The five failures fall
-one per try, four on the jeans scenario and one on the tee, so every try
-contains a failing card and the criterion scores 0 of 5. That spread is worth
-noticing on its own: a criterion reduced strictly across a five-item set turns a
-20% per-card fault into total failure of the criterion, which is what "every
-card" was written to mean.
+Five of the 25 cards lost the digits. None of them gave a *wrong* price —
+"thirty bucks" for a $30 item is true — but criterion 4 asks for the price as a
+number, and I asked for that because a spelled-out price stops being true the
+moment a listing isn't a round number of dollars.
 
-Why the change caused it is partly inference and I will not overclaim. What is
-certain is that the price rule was not touched, and that the old rule — "State
-the price ($30) exactly once" — names the digits without ever saying the digits
-are the requirement, so "thirty bucks" always satisfied it as written. What
-changed around it is that the new naming rule is long, emphatic about copying
-the listing's words, and makes the opening stiffer; the model appears to have
-loosened register elsewhere in the sentence to compensate. The rule was
-satisfiable in words all along; the first improvement is what made the model
-start taking that option.
+Those five failures land one per try, four on the jeans and one on the tee, so
+every single try has a bad card in it and the criterion scores 0 of 5. That
+spread is worth noticing by itself: when I check a whole set of five at once and
+require all of them to pass, a problem that only hits 20% of cards fails the
+criterion completely. Which is what I meant by "every card", so this is the
+check working, not the check being unfair.
 
-A second side effect, which no criterion measures: the title rule is now obeyed
-literally enough that some cards paste the raw listing title into the prose,
-em dash included — "these thrashed Straight Leg Black Jeans — Faded for thirty
-bucks". That reads like a database field in a sentence.
+Why my change caused it is partly me guessing, and I'd rather say so than
+pretend otherwise. What I know for sure is that I never touched the price rule,
+and that the old rule — "State the price ($30) exactly once" — shows the digits
+without ever saying the digits are the actual requirement, so "thirty bucks"
+always satisfied it as written. What changed around it is that my new naming
+rule is long, insistent about copying the listing's own words, and makes the
+first sentence stiffer. My guess is the model got more casual elsewhere in the
+sentence to make up for that. The rule could always be satisfied with words; my
+first fix is just what made the model start doing it.
 
-### Improvement 2 — fixing the regression (stretch)
+One more side effect that none of my criteria measure: the title rule is being
+followed so literally now that some cards paste the raw listing title into the
+sentence, em dash and all — "these thrashed Straight Leg Black Jeans — Faded for
+thirty bucks". That reads like a database field dropped into a sentence.
+
+### Improvement 2 — fixing what the first one broke (stretch)
 
 **What I changed.** One more rule in the same prompt, nothing else.
 
@@ -1186,8 +1206,8 @@ After:
   exactly as "$30" — not spelled out in words, not rounded, not approximated.
 ```
 
-**Which failure it was meant to fix.** Criterion 4's 0-of-5, and nothing else.
-The naming rule from improvement 1 is left exactly as it is, because criterion 3
+**Which failure I was trying to fix.** Criterion 4's 0 of 5, and nothing else. I
+left the naming rule from the first fix exactly as it was, because criterion 3
 depends on it now.
 
 ### Run Log — After (improvement 2)
@@ -1202,18 +1222,18 @@ depends on it now.
 | 4. The fit card names the item, its price and its platform, every time | 5 of 5 | PASS | PASS | PASS | PASS | FAIL | **MISSED (4/5)** |
 | 5. A stated price ceiling is never exceeded, and the empty-search message is actionable | (a) 5 of 5, (b) 3 of 3 | PASS | PASS | PASS | PASS | PASS | **MET (5/5)** |
 
-**Did it help?** Yes, substantially, and not enough. The fault it targeted went
-from 5 cards in 25 to 1 in 25:
+**Did it help?** Yes, a lot, and still not enough. The problem I aimed at went
+from 5 cards in 25 down to 1 in 25:
 
 | | Before | After 1 | After 2 |
 |---|---|---|---|
 | Cards with no numeric price | **0 of 25** | **5 of 25** | **1 of 25** |
 | Criterion 4 | MET (5/5) | MISSED (0/5) | MISSED (4/5) |
 
-An 80% reduction in the fault rate moves the criterion from 0 of 5 to 4 of 5 and
-no further, because criterion 4 says *every* card. One bad card in a try fails
-that try, so the last remaining instance — one card in 25 — costs a whole try.
-It is the same fault, in the same form, on a different item:
+Cutting the problem by 80% moves the criterion from 0 of 5 to 4 of 5 and no
+further, because criterion 4 says *every* card. One bad card fails its whole
+try, so the single one left over — one card in 25 — costs me a full try. It's
+the same mistake in the same form, just on a different item:
 
 ```
 accessories — shoulder bag, try 5, price $38:
@@ -1222,15 +1242,17 @@ poshmark. It's the easiest way to pull together a slouchy grey sweatshirt and
 wide khakis without looking like you tried too hard.
 ```
 
-"thirty-eight dollars", after a rule that says in as many words "in digits with
-the dollar sign, written exactly as \"$38\" — not spelled out in words". The
-instruction is unambiguous, it is obeyed 24 times out of 25, and at temperature
-0.9 it is disobeyed once. That is the finding, and it is more useful than the
-improvement: **an exact string required in model output cannot be made reliable
-by asking more firmly.** Three phrasings of the rule produced fault rates of
-0%, 20% and 4%, and none of them produced 0% by instruction — the 0% in the
-before-run was luck at a lower difficulty, since the old rule was satisfiable in
-words too and the model simply had not taken that option yet.
+"thirty-eight dollars", under a rule that says in plain words "in digits with
+the dollar sign, written exactly as \"$38\" — not spelled out in words". There's
+nothing ambiguous about that instruction. It gets followed 24 times out of 25,
+and at temperature 0.9 it gets ignored once.
+
+That's the real finding here, and I think it's worth more than the fix itself:
+**if I need an exact string in what the model writes, asking more firmly doesn't
+make it reliable.** Three versions of that one rule gave me failure rates of 0%,
+20% and 4%, and none of them got to 0% because of how well I worded it — the 0%
+in my before-run was luck on an easier version, since the old rule could be
+satisfied with words too and the model just hadn't done it yet.
 
 ### Where the agent ended up
 
@@ -1242,90 +1264,97 @@ words too and the model simply had not taken that option yet.
 | 4. Card names item, price, platform | MET (5/5) | MISSED (0/5) | **MISSED (4/5)** | **broken** |
 | 5. Ceiling held, empty message actionable | MET (5/5) | MET (5/5) | MET (5/5) | — |
 
-**The honest summary: I traded one miss for another.** The agent began the unit
-missing one of five criteria and ends it missing one of five criteria, at the
-same 4-of-5 rate, in a different place. Criterion 3 is fixed and has not failed
-in 50 runs since. Criterion 4 was collateral damage from fixing it, and the
-second change recovered most but not all of what the first change cost.
+**The honest summary: I traded one miss for another.** My agent started this
+unit missing one of five criteria and it ends the unit missing one of five
+criteria, at the same 4-of-5 rate, just somewhere else. Criterion 3 is fixed and
+hasn't failed in 50 runs since. Criterion 4 got broken as a side effect of
+fixing it, and my second change got back most of what the first change cost but
+not all of it.
 
-I am not reverting either one, and the reason is in the numbers above rather
-than in a preference. Criterion 3's failure showed a user a caption describing a
-different listing from the one being sold to them. Criterion 4's remaining
-failure shows a user "thirty-eight dollars" instead of "$38", which is accurate
-and merely informal — it only becomes a real defect on a listing whose price is
-not a round number, and there are none in this dataset. If I have to carry one
-miss, that is the one to carry. But it is still a miss against a target I set,
-it is reported as one, and the fix that would actually close it is to stop asking
-the model for the facts at all — which is problem 1 under What's Still Broken.
+I'm not undoing either change, and the reason is in the numbers rather than a
+preference. Criterion 3's failure showed a user a caption describing a different
+item than the one it was selling them. Criterion 4's leftover failure shows a
+user "thirty-eight dollars" instead of "$38", which is true and just casual — it
+would only become a real problem on a listing whose price isn't a round number,
+and my data doesn't have any of those. If I have to carry one miss, that's the
+one I'd pick. But it's still a miss against a target I set for myself, I'm
+reporting it as one, and the thing that would actually close it is to stop
+asking the model for the facts at all, which is problem 1 under What's Still
+Broken.
 
 ---
 
 ## What's Still Broken
 
-One criterion is still missed: **criterion 4, at 4 of 5 against a 5-of-5
-target**, because one card in 25 writes "thirty-eight dollars" instead of "$38".
-That and five other things, ordered by how much I think they matter rather than
-by how easy they are.
+One criterion is still missed: **criterion 4, at 4 of 5 against a target of 5 of
+5**, because one card in 25 writes "thirty-eight dollars" instead of "$38". That
+and five other things, in the order I think they matter rather than how easy
+they'd be.
 
-**1. Criterion 4 cannot be closed by instruction, and that is the real finding
-of this unit.**
+**1. Criterion 4 can't be closed by writing a better instruction, and that's the
+real thing I learned this unit.**
 
-Three phrasings of one prompt rule produced three fault rates — 0%, 20%, 4% —
-and the only one that reached zero did so by luck rather than by being
-unambiguous: the original rule, "State the price ($30) exactly once", was
-satisfiable in words all along, and the model had simply not yet taken that
-option. The rule it ends on says "in digits with the dollar sign, written exactly
-as \"$38\" — not spelled out in words", and is disobeyed once in 25 cards at
-temperature 0.9. Asking more firmly is not a mechanism; it is a hope with a
-measured success rate of 96%.
+Three versions of one prompt rule gave me three failure rates — 0%, 20%, 4% —
+and the only one that hit zero got there by luck rather than by being clear. My
+original rule, "State the price ($30) exactly once", could be satisfied with
+words all along; the model just hadn't tried that yet. The rule I've ended up
+with says "in digits with the dollar sign, written exactly as $38 — not spelled
+out in words", and it still gets ignored once in every 25 cards at temperature
+0.9. Asking more firmly isn't a mechanism, it's a hope with a measured success
+rate of 96%.
 
-Fifty runs before, fifty after, fifty after that — 150 runs — and the loop, both
-branches, the session, `search_listings` and `compare_prices` produced zero
-failures between them. Every miss in this unit came out of `create_fit_card`.
-That prompt now carries a rule to copy the title's words, a rule to write the
-price in digits, and a rule not to sound like a product page, and the first two
-pull against the third: improvement 1 is a worked demonstration that tightening
-one loosened another somewhere I was not looking.
+Fifty runs before, fifty after, fifty after that — 150 runs — and between them
+the loop, both branches, the session, `search_listings` and `compare_prices`
+produced zero failures. Every single miss this unit came out of
+`create_fit_card`. That one prompt now carries a rule about copying the title's
+words, a rule about writing the price in digits, and a rule about not sounding
+like a product page, and the first two pull against the third. My first fix is a
+worked example of that: I tightened one thing and loosened another somewhere I
+wasn't looking.
 
-What I would do, and it is the first thing I would do in the next unit: stop
-asking the model for the facts at all. The price and the platform are known
-strings. A caption that must contain them exactly is a caption with a slot in
-it, not a caption a model at temperature 0.9 should be trusted to transcribe. I
-would have `create_fit_card` ask for the prose only and assemble the fact
-sentence in Python, which turns criterion 4's price and platform clauses from
-things that get *checked* into things that cannot fail, and lets the three
-fighting rules drop back to one.
+What I'd do, and it's the first thing I'd do next unit: stop asking the model
+for the facts at all. The price and the platform are strings I already have. A
+caption that has to contain them exactly is a caption with a blank in it, not
+something a model at temperature 0.9 should be trusted to copy out. I'd have
+`create_fit_card` write only the description and then build the sentence with
+the price and platform in Python. That turns criterion 4's price and platform
+parts from things I *check* into things that can't fail, and it lets those three
+fighting rules drop back down to one.
 
-Why I stopped here instead: that is a change to what the tool returns, not to a
-prompt, and this unit's rule allows the MCP move plus the improvement. I spent
-the improvement on the diagnosis's own target and the stretch allowance on the
-regression it caused. Taking a third bite would have meant three changes between
-the before-run and the last after-run, and the one thing this unit is actually
-measuring is whether a change can be attributed to its cause.
+Why I stopped here instead: that changes what the tool hands back, not just a
+prompt, and the rule for this unit is the MCP move plus one improvement. I spent
+the improvement on what my diagnosis actually named and the stretch allowance on
+the problem that caused. Taking a third go would have meant three changes
+between my first run and my last, and then I couldn't honestly say which change
+did what — which is the one thing this unit is actually measuring.
 
-**2. Criterion 4's distinct-openings clause could not fail, and the thing it was
-written to catch is happening.**
+**2. Criterion 4's "five different openings" part couldn't fail, and the thing it
+was written to catch is happening.**
 
-Revised in `criteria.md` with the original left in place. The clause compared
-openings across five *different* garments, which is nearly impossible to fail,
-and it passed 5 of 5 while telling me nothing. Measured the way it was meant —
-one item captioned repeatedly — `lst_037` gives 4 of 5 distinct openings, with
-"Scored these perfectly faded black straight-leg jeans on thredUp" appearing
-verbatim on two separate tries, and 3 of 5 if only the first four words are
-compared. The mail merge the clause exists to prevent is partly there.
+I revised this in `criteria.md` and left the original in place. The part compared
+openings across five *different* garments, which is nearly impossible to fail —
+a card about a leather belt and a card about platform mary janes aren't going to
+start the same way, because the items have no words in common. It passed 5 of 5
+and told me nothing.
 
-Why I stopped: the revision is the finding. Measuring it properly needs the same
-item run five times as its own scenario, and acting on it means a fourth rule in
-a prompt that already has three too many — which is problem 1, and it should be
-fixed there rather than patched here.
+Measured the way I actually meant it, with one item captioned over and over,
+`lst_037` gives 4 of 5 different openings, and "Scored these perfectly faded
+black straight-leg jeans on thredUp" shows up word for word on two separate
+tries. If I only compare the first four words it's 3 of 5. The mail merge I
+wrote that part to prevent is partly already here.
 
-**3. Criterion 1's target rests on something criterion 1 cannot measure.**
+Why I stopped: the revision *is* the finding. Measuring it properly needs the
+same item run five times as its own scenario, and acting on it means adding a
+fourth rule to a prompt that already has three too many — which is problem 1,
+and that's where it should get fixed, not patched here.
 
-Also revised, original left in place. The 4-of-5 target was justified by "roughly
+**3. Criterion 1's target rests on something criterion 1 can't measure.**
+
+Also revised, original left in place. I justified the 4-of-5 target with "roughly
 one query in five that a human would call reasonable" finding nothing, but the
-clause begins "given a query that matches at least one listing", so the failure
-the number was chosen for is excluded by the clause's own precondition.
-`probe_synonyms.py` measures it directly and the original estimate was sound,
+criterion starts with "given a query that matches at least one listing" — so the
+failure I picked the number for is ruled out by the criterion's own wording.
+`probe_synonyms.py` measures it directly, and my original guess was close and
 slightly optimistic:
 
 ```
@@ -1339,123 +1368,130 @@ lst_032  shacket       ->  overshirt              0 hits
 lst_039  shoulder bag  ->  small handbag          1 hit,  not it
 ```
 
-The two that return hits without returning the right garment are the worse
-half: the user is styled an item they did not ask about and nothing in the
-output says so. No criterion catches that, and the revised clause only catches
-the zero-hit version of it.
+The two that get results without getting the right item are the worse half: the
+user gets styled something they never asked about and nothing tells them that
+happened. None of my criteria catch that, and even my revised version only
+catches the zero-results kind.
 
-What I would do: a synonym table mapping the obvious pairs onto the vocabulary
-the data actually uses — a dozen entries would cover these four. I did not,
-because it is a change to `search_listings`, which is the tool now published
-over MCP, and changing a tool's behaviour in the same unit I published its
-contract is the wrong order to do things in.
+What I'd do: a small synonym table mapping the obvious pairs onto the words my
+data actually uses — about a dozen entries would cover all four of these. I
+didn't, because that changes `search_listings`, which is the tool I just
+published over MCP, and changing how a tool behaves in the same unit I promised
+somebody what it does is the wrong order to do things in.
 
-**4. The empty-search message has a grammar bug when the query names no
-constraints but keywords.**
+**4. The empty-search message has a grammar bug when the query has keywords but
+no other filters.**
 
 ```
 Nothing in the 40 listings matches all of: keywords: sequined, ballgown.
   To get results, or use words closer to how a seller would title it — ...
 ```
 
-"To get results, or use words" — the dangling "or" appears because
-`agent.py::_no_results_message` builds the fixes list conditionally and the
-price and size clauses are both absent, leaving the final "or ..." to lead. It
-passes criterion 5(b), which asks only that a constraint be quoted with its
-value, and it is a one-line fix in list assembly. It is still the first thing a
-user sees when their words are not in the data, which is the most common way
-this agent fails. Not fixed because it is not what the diagnosis named and this
-unit allows one change; it is a two-minute job in the next.
+"To get results, or use words" — that dangling "or" happens because
+`agent.py::_no_results_message` builds its list of suggestions conditionally,
+and when there's no price limit and no size, the last "or ..." ends up leading
+the sentence. It still passes criterion 5(b), which only asks that a filter gets
+repeated back with its value, and it's a one-line fix in how I build that list.
+But it's also the first thing a user sees when their words aren't in my data,
+which is the most common way this agent fails anyone. I didn't fix it because
+it's not what my diagnosis named and this unit allows one change. It's a
+two-minute job next unit.
 
-**5. `MAX_ITERATIONS` is still never reached, so the stop condition is
+**5. `MAX_ITERATIONS` has never actually been reached, so my stop condition is
 untested.**
 
-`trace.check_iterations` is called every time round the loop and the ceiling is
-10, but the largest result set in any of these 150 runs was 10 items and the
-loop breaks as soon as one candidate is not overpriced. The mary janes scenario
-is the closest thing to a test — every candidate overpriced — and it has one
-result. The guard has never fired, so I do not actually know it works. Forcing
-it would mean a scenario with more than 10 overpriced candidates in one
-category, which this 40-row dataset cannot produce.
+`trace.check_iterations` gets called every time round the loop and the limit is
+10, but the biggest result set in any of these 150 runs was 10 items, and the
+loop breaks as soon as one candidate isn't overpriced. The mary janes scenario
+is the closest I get — every candidate overpriced — and it only has one result.
+The guard has never fired, so I don't actually know it works. Forcing it would
+need a scenario with more than 10 overpriced candidates in one category, and 40
+rows of data can't produce that.
 
 **6. Nothing checks that the outfit only names clothes the user owns.**
 
-`suggest_outfit`'s prompt says "Do not suggest anything they do not own" and
-nothing verifies it. The wardrobe is a known list of names, so this is
-mechanically checkable, and it is the obvious sixth criterion. It is not a miss
-because I never wrote it down as a target — which is the honest reason it is in
-this section and not in the table.
+`suggest_outfit`'s prompt says "Do not suggest anything they do not own" and I
+never verify it. The wardrobe is a list of names I already have, so this is
+easy to check mechanically, and it's the obvious sixth criterion. It isn't a
+miss, because I never wrote it down as a target — which is the honest reason
+it's down here instead of in the table.
 
 ---
 
-### If I missed nothing, were the targets low?
+### If I missed nothing, were my targets too low?
 
-I missed one of five, so the question is still worth answering, and the answer
-is: two of them were, in a specific way. Criteria 2 and 5(a) are both pure
-deterministic paths — one `if` on a list length, one `<=` on a parsed float —
-and both came out 5 of 5 across 150 runs. That is not an agent passing a test,
-it is arithmetic. I set them at 5 of 5 on purpose, reasoning that "a flaky
-result here would be information", and that reasoning holds: they are cheap
-regression guards and they would have screamed if the MCP move had changed the
-return shape. But they were never going to tell me anything about the parts of
-this system that can actually vary.
+I missed one of five, but the question is still worth answering, and the answer
+is that two of them were too low in a specific way. Criteria 2 and 5(a) are both
+pure no-model paths — one `if` on the length of a list, one `<=` on a number
+I already parsed — and both came out 5 of 5 across all 150 runs. That isn't an
+agent passing a test, that's arithmetic. I set them at 5 of 5 deliberately,
+reasoning that "a flaky result here would be information", and that reasoning
+does hold up: they cost nothing to keep checking and they would have screamed
+if the MCP move had changed what search gives back. But they were never going to
+tell me anything about the parts of this system that can actually vary.
 
-The criterion I would tighten is 4, and the revision in `criteria.md` is that
-tightening. Criteria 1 and 2 were given to me; of the three I wrote, criterion 3
-is the one that earned its place — it is the only one that found something, and
-it found it in a part of the run I would not have thought to look at, because it
-was written to catch a loop bug and it caught a caption bug instead.
-
----
+The criterion I'd tighten is 4, and the revision in `criteria.md` is me
+tightening it. Criteria 1 and 2 were given to me. Of the three I wrote myself,
+criterion 3 is the one that earned its place — it's the only one that found
+anything, and it found it in a part of the run I wouldn't have thought to look
+at, because I wrote it to catch a bug in my loop and it caught a bug in my
+captions instead.
 
 ## How I Used AI — Unit 4
 
-*Continues the unit 3 section of the same name, above.*
+Continues the unit 3 section above, and the same split applies.
 
-In this unit I used Claude for four things, and the fourth is the one worth
-recording.
+**AI inside the app.** Unchanged from unit 3 — `suggest_outfit` and
+`create_fit_card` call the model, `search_listings` and `compare_prices` don't.
+That mattered more this unit than last, because it's the reason the test is
+affordable. My five criteria need 50 runs each time I measure them, and only 25
+of those 50 touch the model, so a full run costs about 60 calls instead of 100.
+It's also why I could design the scenario set without spending anything: which
+item each query picks is decided by two tools that never call the model, so I
+worked all five out ahead of time from the data.
 
-**Arguing the opposite verdict.** The unit suggests pasting a criterion, its
-target, the tries and the verdict, and asking for the strongest case against.
-I did that for criterion 3, because a 4-of-5 miss resting on one caption is
-exactly the kind of verdict that is convenient to talk yourself out of. The
-counter-argument was good: the three id clauses passed, the loop was provably
-consistent, no user was shown the wrong item's *price* or *platform*, and the
-clause I failed it on is the vaguest in the criterion. I kept the MISSED anyway,
-and the reason is in the diagnosis — the clause exists to catch a wrong-item
-failure, and a caption describing a different listing on the same results page
-is a wrong-item failure even when the ids agree. But the argument changed how I
-wrote the verdict up: both readings and both numbers are now in the README,
-rather than only the one I chose.
+Running with the cache off is what makes five tries five real answers, and it's
+also what made the rate limiter show up — the free tier allows 15 requests a
+minute and a full run of mine is around 60, so each measurement takes about
+fifteen minutes of the limiter pacing me. Three measurements, 182 model calls,
+nothing crashed.
 
-**Reading the failure messages as a user would.** I pasted the three failure
-messages in and asked what a user who cannot see the code would try next, with
-the instruction not to rewrite them. Two were actionable. The model-unavailable
-one was actionable *about the key* and said nothing about the run, which is what
-sent me looking at what the exception was discarding — and the handler I added
-reports the item and the price check because of that, not because the message
-itself needed rewording.
+**AI as a coding tool.** Same as before: writing Python from things I'd already
+decided, plus boilerplate, syntax and debugging. This unit that meant the
+FastMCP registration block, the string-matching helpers in `score.py`, and the
+JSON dump I added to `run_eval.py` so a program could read my results instead
+of me reading 50 runs by eye.
 
-**Writing the MCP tool description.** I wrote it first, then asked what a caller
-who could not see the implementation would still not know. The answer was units
-and scales: I had written "max_price" without saying inclusive or what currency,
-and I had not mentioned that a size only matches inside its own family, which is
-the single most surprising thing about the tool. Both went in.
+What stayed mine: the five criteria and their targets (written in unit 3, before
+any results existed, and the commit history shows that), which scenarios to run
+and why, how to read each criterion when its wording needed a decision, the
+verdicts, and the diagnosis of the miss. The judgement calls in this unit are
+the graded part and they're the part I did.
 
-**Testing my own scorer, which I would not have thought to do.** `score.py`
-came back MET on all five criteria the first time. I asked Claude to find ways
-the scorer could return MET on a run that should fail, and the useful answer was
-not about the criteria at all: substring matching means `hat` is inside `that`,
-so every caption containing the word "that" counted as naming a bucket hat, and
-`tee` is shared by three candidates in one result set so it identified none of
-them. I built nine deliberately corrupted runs as negative controls; the first
-version caught eight. Fixing the substring bug is what turned criterion 3 from
-MET to MISSED — the only miss in the unit came out of testing the test, and
-without it the whole run would have been a clean sweep produced by an instrument
-with no demonstrated ability to return FAIL.
+**Two things I'd point at as the actual work of this unit:**
 
-What I did not use it for: deciding the verdicts, or writing the criteria. Both
-were mine, and the one time the two disagreed is written up above.
+*Testing my own checker.* `score.py` came back MET on all five criteria the
+first time, and a checker that can't fail isn't evidence of anything. So I built
+nine runs that I broke on purpose — a blanked fit card, a branch that walks past
+itself, an off-by-one in the trace ids, a card describing the wrong candidate, a
+missing platform, a missing price, five identical openings, a result over the
+price limit, an unhelpful empty message — and fed them through. It caught eight.
+The one it missed was a real bug in my own matching: I was comparing title words
+as pieces of words rather than whole words, so "hat" inside "that" counted as
+naming a bucket hat, and "tee" — which three candidates in one search result
+share — identified none of them. Fixing that is what turned criterion 3 from MET
+to MISSED. The only miss in this unit came out of testing the test, and without
+it my whole run would have been a clean sweep produced by a checker that
+couldn't return FAIL.
+
+*Checking the reasoning behind a target, not just the target.* My criterion 1
+target of 4 of 5 was justified in unit 3 by a guess that roughly one reasonable
+phrasing in five would find nothing. The clause as I wrote it can't actually
+measure that, because it starts "given a query that matches at least one
+listing". So I wrote `probe_synonyms.py` to measure the guess directly: 4 of 15
+alternative phrasings (27%) fail to find the garment the seller's own wording
+finds, against the 20% I'd predicted. The guess was sound and slightly
+optimistic, and that's now its own clause in `criteria.md` with its own number.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 

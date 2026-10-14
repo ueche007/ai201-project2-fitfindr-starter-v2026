@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """
-Apply criteria.md to a run and print the run log. ← UNIT 4, MILESTONES 3 & 4
+Check criteria.md against a run and print the run log. Unit 4, Milestones 3 & 4.
 
     python score.py results/run_2026-10-13_1420_before.json
     python score.py --latest before
 
-run_eval.py runs the scenarios and deliberately leaves the PASS/FAIL columns
-blank, because deciding what counts as a pass is the lesson. This file is that
-decision, written down.
+run_eval.py runs the scenarios and leaves the PASS/FAIL columns empty on
+purpose, because deciding what counts as a pass is the whole point. This file
+is that decision, written down.
 
-Why in code rather than by eye. The scenario set is 45 runs per label. Marking
-those by hand is not a test of the agent, it is a test of whether I still
-remember on row 40 what I decided on row 3 — and the one direction that drift
-reliably runs in is the direction that makes the agent look better. Every
-clause of every criterion below is quoted from criteria.md in the docstring
-next to the code that checks it, so the mapping can be audited and disagreed
-with. Nothing here decides anything criteria.md did not already say; where a
-clause needed interpreting to be executable, the interpretation is called out
-in the docstring as INTERPRETATION and repeated in the README.
+Why in code instead of by eye. My scenario set is 50 runs per label. Marking
+those by hand isn't a test of my agent, it's a test of whether I still remember
+on row 40 what I decided on row 3 -- and if I drift, I know which way I'll
+drift, because the flattering answer is always right there. So every part of
+every criterion is quoted in a comment right next to the code that checks it,
+and anyone can look at the two and tell me I got it wrong. Nothing in here
+decides anything criteria.md didn't already say. Where I had to interpret
+something to be able to check it at all, I say so in the docstring and I say it
+again in the README.
 
-A "try" is one repetition of a criterion's whole scenario set. See the header
-of scenarios.py for why.
+One "try" is one full pass through a criterion's whole set of scenarios. The
+header of scenarios.py explains why.
 """
 
 import argparse
@@ -34,9 +34,10 @@ import config
 
 # ── Reading what the model wrote ──────────────────────────────────────────────
 
-# Title words too generic to prove a card is talking about the right item.
-# "Vintage Band Tee" and "Vintage Linen Blazer" share "vintage", so "vintage"
-# cannot be the word that identifies either of them.
+# Words from a title that are too generic to prove a card is talking about the
+# right item. "Vintage Band Tee" and "Vintage Linen Blazer" both have "vintage"
+# in them, so "vintage" can't be the word that tells me which one I'm reading
+# about.
 _GENERIC_TITLE_WORDS = {
     "vintage", "style", "print", "wash", "faded", "oversized", "light",
     "medium", "dark", "reversible", "adjustable", "size", "and", "the",
@@ -56,11 +57,12 @@ _CATEGORY_WORDS = {
 
 def _title_tokens(title: str) -> set[str]:
     """
-    The words in a title that could identify the item in a caption.
+    The words in a title that could tell me which item a caption is about.
 
-    Four letters or more, minus the generic set. "Platform Mary Janes — Black
-    Patent" gives {"platform", "mary", "janes", "black", "patent"} — "mary" and
-    "janes" are three and five letters, so the length floor is 3 here, not 4.
+    Three letters or more, minus the generic ones. "Platform Mary Janes — Black
+    Patent" gives me {"platform", "mary", "janes", "black", "patent"}. I set
+    the cutoff at three rather than four because "mary" and "janes" need to
+    count.
     """
     words = re.findall(r"[a-z0-9]+", (title or "").lower())
     return {w for w in words if len(w) >= 3 and w not in _GENERIC_TITLE_WORDS}
@@ -68,31 +70,33 @@ def _title_tokens(title: str) -> set[str]:
 
 def _word_in(token: str, text: str) -> bool:
     """
-    True when `token` appears in `text` as a word, singular or plural.
+    True when `token` shows up in `text` as its own word, singular or plural.
 
-    Whole-word and not substring, which was a real bug in the first version of
-    this file: "hat" is inside "that", so every caption containing the word
-    "that" counted as naming a bucket hat. Substring matching is right in
-    tools.py, where "tee" should find "Baby Tee", and wrong here, where the
-    question is whether a caption is talking about a particular listing.
+    Whole words, not pieces of words. This was a genuine bug in my first
+    version of this file: "hat" is inside "that", so every caption with the
+    word "that" in it counted as naming a bucket hat. Matching pieces of words
+    is the right call in tools.py, where I want "tee" to find "Baby Tee". It's
+    the wrong call here, where I'm asking whether a caption is about one
+    particular listing.
     """
     return re.search(r"\b" + re.escape(token) + r"s?\b", text or "") is not None
 
 
 def _mentions_item(text: str, item: dict) -> bool:
-    """True when `text` names the item: any distinctive word from its title."""
+    """True when `text` names the item, using any telling word from its title."""
     low = (text or "").lower()
     return any(_word_in(t, low) for t in _title_tokens(item.get("title", "")))
 
 
 def _identifying_hits(card: str, results: list[dict]) -> dict[str, list[str]]:
     """
-    For each search result, which of its title words — words belonging to it
-    and to no other candidate in the same result set — the card actually uses.
+    For every search result, which of its title words the card actually uses --
+    counting only words that belong to it and to none of the other candidates
+    that came back in the same search.
 
-    This is how criterion 3's last clause gets checked. See check_3 for why it
-    is done by comparing candidates rather than by looking at the selected item
-    alone.
+    This is how I check the last part of criterion 3. check_3 explains why I
+    compare all the candidates instead of just looking at the one that got
+    picked.
     """
     tokens = {r.get("id"): _title_tokens(r.get("title", "")) for r in results}
     seen = Counter(t for ts in tokens.values() for t in ts)
@@ -107,13 +111,14 @@ def _mentions_item_or_category(text: str, item: dict) -> bool:
     """
     Criterion 4: "names the item or its category".
 
-    INTERPRETATION. The literal category strings in the data are "tops",
-    "bottoms", "outerwear", "shoes" and "accessories", and no caption written
-    by a person would contain the word "tops". So "its category" is read as the
-    kind of garment it is — the words in _CATEGORY_WORDS for that category —
-    rather than the data's bucket name. This is more generous than the literal
-    reading and it is the reading I would defend: a card opening "this cropped
-    denim jacket" has named the category of an outerwear listing.
+    How I'm reading this. The actual category words in my data are "tops",
+    "bottoms", "outerwear", "shoes" and "accessories", and no caption a real
+    person wrote would ever contain the word "tops". So when I said "its
+    category" I'm taking that to mean the kind of clothing it is -- the words
+    in _CATEGORY_WORDS -- rather than the literal label in my data. That's more
+    generous than reading it word for word, and I think it's the fair reading:
+    a card that starts "this cropped denim jacket" has named the category of an
+    outerwear listing.
     """
     if _mentions_item(text, item):
         return True
@@ -128,10 +133,11 @@ def _sentences(card: str) -> list[str]:
     """
     Split a caption into sentences.
 
-    Decimal points and "U.S." are the usual traps; prices in this data are
-    whole dollars and the cards are two to four sentences of plain prose, so a
-    split on .!? followed by whitespace-or-end is accurate enough. Emoji and
-    newlines are treated as ordinary characters, not terminators.
+    The usual things that break this are decimal points and abbreviations like
+    "U.S.". Every price in my data is a whole number of dollars and the cards
+    are two to four sentences of normal writing, so splitting on . ! or ?
+    followed by a space or the end is good enough here. Emoji and line breaks
+    count as ordinary characters, not sentence endings.
     """
     text = (card or "").strip()
     if not text:
@@ -144,9 +150,9 @@ def _states_price(card: str, price) -> bool:
     """
     Criterion 4: the card "contains the item's price as a number".
 
-    Matches the price written as a person writes it — 19, 19.0, 19.00 — and
-    refuses a match that is part of a longer number, so a card mentioning
-    "1990s" does not count as stating a $19 price.
+    I accept the price written the way a person writes it -- 19, 19.0, 19.00 --
+    and I refuse a match that's part of a bigger number, so a card that
+    mentions "1990s" doesn't count as having said $19.
     """
     try:
         value = float(price)
@@ -166,10 +172,10 @@ def _names_platform(card: str, platform: str) -> bool:
     """
     Criterion 4: the card contains "its platform name".
 
-    Case-insensitive, and whitespace is squashed on both sides first so that
-    "Thred Up" counts as naming thredUp. A card that gets the platform's
-    capitalisation wrong has still told the user where to buy it, which is what
-    the criterion is protecting.
+    I ignore capitals, and I strip the spaces out of both sides first so that
+    "Thred Up" counts as naming thredUp. A card that gets the capitals wrong
+    has still told the user where to buy the thing, and that's what this part
+    of the criterion is protecting.
     """
     if not platform:
         return False
@@ -181,14 +187,14 @@ def _names_platform(card: str, platform: str) -> bool:
 
 def _trace_steps(trace_text: str) -> list[dict]:
     """
-    Parse a trace back into steps.
+    Read a trace back into separate steps.
 
-    trace.py writes "[n] name" and then indented "in:", "out:" and "→" lines,
-    which is regular enough to read back. Criterion 3 specifies that it is
-    checked by reading the trace, so the trace is what is read — not the
-    session that produced it. Checking the session against itself would pass a
-    loop that wrote the same wrong item to both places, which is the bug
-    criterion 3 says it exists to catch.
+    trace.py prints "[n] name" and then indented "in:", "out:" and "→" lines,
+    which is regular enough to read back in. Criterion 3 says it's checked by
+    reading the trace, so that's what I read -- not the session that made it.
+    Checking the session against itself would happily pass a loop that wrote
+    the same wrong item into both places, and that's the exact bug criterion 3
+    says it's there to catch.
     """
     steps = []
     current = None
@@ -221,9 +227,10 @@ def _id_in(text: str) -> str | None:
 
 # ── The five criteria ─────────────────────────────────────────────────────────
 #
-# Each checker takes one run and returns (passed, reason). `reason` is only
-# read when it failed — it is what the diagnosis is written from, so it names
-# the step and the mechanism rather than saying "wrong".
+# Each checker takes one run and gives back (passed, reason). I only read
+# `reason` when something failed, and it's what I write my diagnosis from, so
+# it has to name the step and what actually went wrong instead of just saying
+# "bad".
 
 
 def check_1(run) -> tuple[bool, str]:
@@ -231,9 +238,9 @@ def check_1(run) -> tuple[bool, str]:
     Criterion 1: "the agent completes all three tool calls and returns a fit
     card". Target 4 of 5.
 
-    All three means the three tools of the original inventory —
-    search_listings, suggest_outfit, create_fit_card. compare_prices is the
-    fourth, stretch tool and criterion 1 predates it.
+    "All three" means the three tools from my original inventory:
+    search_listings, suggest_outfit and create_fit_card. compare_prices is my
+    fourth, stretch tool, and I wrote criterion 1 before it existed.
     """
     if run["crashed"]:
         return False, f"crashed: {run['crashed']}"
@@ -290,10 +297,10 @@ def check_2(run) -> tuple[bool, str]:
 
 def check_3(run) -> tuple[bool, str]:
     """
-    Criterion 3: the selected id on the select_item step, the id on the
-    suggest_outfit step and an id in search_results must all be the same
-    string, "and the fit card's named item must be that listing's title".
-    Target 5 of 5. Read from the trace, as the criterion specifies.
+    Criterion 3: the id on the select_item step, the id on the suggest_outfit
+    step and an id in search_results all have to be the same string, "and the
+    fit card's named item must be that listing's title". Target 5 of 5. I read
+    it from the trace, which is what the criterion says to do.
     """
     if run["crashed"]:
         return False, f"crashed: {run['crashed']}"
@@ -386,10 +393,10 @@ def check_3(run) -> tuple[bool, str]:
 
 def check_4_card(run) -> tuple[bool, str]:
     """
-    Criterion 4, the per-card half: every card "contains the item's price as a
-    number and its platform name, and names the item or its category in the
-    first sentence", and "each card must be between 2 and 4 sentences and
-    under 400 characters". Target 5 of 5.
+    Criterion 4, the part about each individual card: every card "contains the
+    item's price as a number and its platform name, and names the item or its
+    category in the first sentence", and "each card must be between 2 and 4
+    sentences and under 400 characters". Target 5 of 5.
     """
     if run["crashed"]:
         return False, f"crashed: {run['crashed']}"
@@ -428,6 +435,8 @@ def check_5a(run) -> tuple[bool, str]:
     Criterion 5(a): "no listing in session['search_results'] has a price above
     that ceiling — zero violations in total across all results returned, not
     just the selected one". Target 5 of 5.
+
+    So I check every result, not only the one the loop picked.
     """
     if run["crashed"]:
         return False, f"crashed: {run['crashed']}"
@@ -455,8 +464,8 @@ def check_5b(run) -> tuple[bool, str]:
     """
     Criterion 5(b): the message "names at least one specific constraint from
     the parsed query with its value — the price ceiling, the size, or the
-    keywords it searched for". Target 3 of 3. '"No results" or "Try a
-    different search" fails this.'
+    keywords it searched for". Target 3 of 3. I also wrote that '"No results"
+    or "Try a different search" fails this', so I check for that too.
     """
     if run["crashed"]:
         return False, f"crashed: {run['crashed']}"
@@ -494,7 +503,7 @@ def check_5b(run) -> tuple[bool, str]:
 # ── Reducing runs into tries ──────────────────────────────────────────────────
 
 def _runs_for(data, criterion):
-    """Every scenario feeding a criterion, in scenarios.py order."""
+    """Every scenario that feeds into a criterion, in scenarios.py order."""
     out = []
     for row in data["rows"]:
         if criterion in (row["scenario"].get("criteria") or []):
@@ -504,13 +513,13 @@ def _runs_for(data, criterion):
 
 def _and_over_set(rows, rep, checker):
     """
-    One try of a criterion whose set is several queries: it passes only if
-    every query in the set passed on this repetition.
+    One try of a criterion whose set is several queries. It only passes if
+    every query in the set passed on this pass through.
 
-    This is the strict reduction and it is deliberate. A criterion that says
+    This is the strict way to do it and I did mean it. A criterion that says
     "across 5 fit cards, every card contains the price" is not satisfied by
-    four of them containing it, so a try in which one card dropped the price
-    is a failed try, not four fifths of one.
+    four of them having it, so a pass where one card dropped the price is a
+    failed try, not four fifths of a try.
     """
     faults = []
     for row in rows:
@@ -614,9 +623,10 @@ def score(data) -> list[dict]:
         a_tries.append(ok)
         a_notes.append(faults)
 
-    # 5(b)'s target is 3 of 3 for 3 different queries, so a try is a query.
-    # The path makes no model call, so every repetition should be identical;
-    # that is asserted rather than assumed, and reported if it ever is not.
+    # 5(b)'s target is 3 of 3 across 3 different queries, so here a try means
+    # a query rather than a pass. That path never calls the model, so all five
+    # passes should come out identical. I check that instead of assuming it,
+    # and I report it if they ever don't.
     b_tries, b_notes = [], []
     for row in rows5b:
         per_rep = [check_5b(row["tries"][rep]) for rep in range(n)]
@@ -625,9 +635,9 @@ def score(data) -> list[dict]:
         faults = [] if ok else [f"{row['scenario']['name']}: {per_rep[0][1]}"]
         if not stable:
             faults.append(
-                f"{row['scenario']['name']}: the result was not identical "
-                f"across all {n} repetitions of a path that makes no model "
-                f"call — that is a defect in itself"
+                f"{row['scenario']['name']}: this came out differently across "
+                f"the {n} passes, on a path that never calls the model — which "
+                f"is a bug all by itself"
             )
             ok = False
         b_tries.append(ok)
@@ -698,8 +708,8 @@ def render(data, results) -> str:
 
     # 5's two parts, broken out
     five = [r for r in results if r["key"] == "5"][0]
-    out += ["", "Criterion 5 has two parts and the row above is the conjunction. "
-                "Separately:", "",
+    out += ["", "Criterion 5 has two parts, and the row above only says MET if "
+                "both of them pass. Separately:", "",
             f"| Part | Target | {' | '.join(f'Try {i}' for i in range(1, n + 1))} | Verdict |",
             f"|---|---|{'|'.join(['---'] * n)}|---|"]
     for name, part in five["parts"].items():

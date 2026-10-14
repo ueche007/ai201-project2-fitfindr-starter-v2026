@@ -117,12 +117,12 @@ def main():
 
 def _session_for_json(session):
     """
-    A session, trimmed for the results file.
+    A session with the bulky bit taken out, ready for the results file.
 
-    The wardrobe is dropped: it is the same ten items on every run that uses
-    it, it is the largest thing in the session, and no criterion asks about it.
-    Its length is kept, because criterion-free or not, "wardrobe items = 0" is
-    what distinguishes the empty-wardrobe scenario from the others.
+    I drop the wardrobe. It's the same ten items on every run that uses it,
+    it's the biggest thing in the session, and none of my criteria ask about
+    it. I do keep the count, because "wardrobe items = 0" is the only thing
+    that tells the empty-wardrobe scenario apart from the rest.
     """
     if not session:
         return None
@@ -220,14 +220,14 @@ def write_report(rows, args):
 
     path.write_text("\n".join(lines), encoding="utf-8")
 
-    # ── machine-readable twin of the same run ─────────────────────────────
+    # ── the same run, but in a format a program can read ──────────────────
     #
-    # Added in unit 4. The markdown above is for reading; this is for scoring.
-    # Judging 45 runs by eye is where a test quietly turns into a test of
-    # whether I remembered what I decided three rows ago, so the verdicts come
-    # from score.py applying criteria.md to this file. The criteria are still
-    # mine and the judgement is still mine — it is written down in code
-    # instead of in my head, which makes it auditable and re-runnable.
+    # I added this in unit 4. The markdown above is for me to read; this is for
+    # score.py to check. Marking 50 runs by eye turns a test of my agent into a
+    # test of whether I remember what I decided three rows ago, so instead the
+    # verdicts come from score.py reading this file. The criteria are still
+    # mine and so is the judgement -- it's just written down in code rather
+    # than in my head, so I can re-run it and anyone can see what I did.
     data_path = path.with_suffix(".json")
     data_path.write_text(
         json.dumps(

@@ -14,7 +14,7 @@
 | 4. The fit card names the item, its price and its platform, every time | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 | 5. A stated price ceiling is never exceeded, and the empty-search message is actionable | (a) 5 of 5, (b) 3 of 3 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-Criterion 5 has two parts and the row above is the conjunction. Separately:
+Criterion 5 has two parts, and the row above only says MET if both of them pass. Separately:
 
 | Part | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|

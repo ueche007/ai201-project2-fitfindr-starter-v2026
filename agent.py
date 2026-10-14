@@ -27,38 +27,40 @@ from tools import suggest_outfit, create_fit_card, compare_prices
 from utils.data_loader import load_listings
 from generate import ModelUnavailable, QuotaGuard
 
-# ── search_listings now arrives over MCP ──────────────────────────────────────
+# ── search_listings comes over MCP now ───────────────────────────────────────
 #
-# Unit 4, Milestone 1. `search_listings` is no longer imported from tools.py —
-# it is called over the protocol, from mcp_server.py, by name. The other three
-# tools stay as direct calls, which is the point: the seam is visible because
-# only one tool crosses it.
+# Unit 4, Milestone 1. I don't import `search_listings` from tools.py anymore.
+# I ask for it by name over MCP instead, and mcp_server.py is what answers. The
+# other three tools are still plain function calls, which is on purpose: with
+# only one tool crossing the line, I can see where the line is.
 #
-# `tools.search_listings` is still the implementation underneath; mcp_server.py
-# imports it and registers it. Nothing about the search logic changed.
+# The actual search code hasn't changed at all. It still lives in tools.py and
+# mcp_server.py imports it from there.
 
 
 class SearchUnavailable(Exception):
     """
-    Raised when the MCP server holding search_listings cannot be reached.
+    Raised when I can't reach the MCP server that holds search_listings.
 
-    This is a failure mode the direct call did not have. Before the move, a
-    broken search was a Python exception in this process; now it is a subprocess
-    that might not start, a protocol that might not handshake, or a tool name
-    that might not be registered. Catching it here is what keeps the new
-    transport from reaching the user as a stack trace.
+    This is a new way to fail that I didn't have before. When search was just a
+    function call, a broken search was an error inside my own program. Now it's
+    a separate program that might not start up, a connection that might not go
+    through, or a tool name that might not be registered. I catch it here so
+    that none of that reaches the user as a wall of red text.
     """
 
 
 def _search_over_mcp(description, size, max_price) -> list[dict]:
     """
-    Call search_listings on the MCP server and insist on the shape it promised.
+    Ask the MCP server for search_listings, and check I got back the shape I
+    said it would return.
 
-    The published contract says a JSON array, empty when nothing matches. The
-    loop's first branch tests emptiness, so anything that is not a list is
-    turned into a raised error rather than allowed to flow on and be read as
-    "no results" — a transport fault and an empty catalogue must not look the
-    same to the branch.
+    I promised a list, and an empty list when nothing matches. My first branch
+    decides what to do by checking whether that list is empty, so if I get back
+    something that isn't a list at all, I raise an error instead of letting it
+    through. Otherwise a broken connection and an empty closet would look
+    exactly the same to that branch, and the user would be told there are no
+    clothes for them when really my server just didn't start.
     """
     try:
         results = call_tool(
@@ -67,20 +69,20 @@ def _search_over_mcp(description, size, max_price) -> list[dict]:
         )
     except MCPError as exc:
         raise SearchUnavailable(
-            f"The search tool couldn't be reached over MCP, so I have nothing "
-            f"to search.\n"
+            f"I couldn't reach the search tool over MCP, so there's nothing "
+            f"for me to search.\n"
             f"  What broke: {exc}\n"
-            f"  To try: run `python mcp_server.py` on its own — if it exits "
-            f"with an error, that error is the cause. `python mcp_client.py` "
-            f"should list search_listings."
+            f"  To try: run `python mcp_server.py` by itself. If it quits with "
+            f"an error, that error is the real problem. `python mcp_client.py` "
+            f"should print search_listings in its list."
         ) from exc
 
     if not isinstance(results, list):
         raise SearchUnavailable(
-            f"The search tool returned a {type(results).__name__} over MCP, "
-            f"where its published contract promises a JSON array.\n"
+            f"The search tool sent back a {type(results).__name__} over MCP, "
+            f"but I said it would always send back a list.\n"
             f"  To try: check the return type hint on search_listings in "
-            f"mcp_server.py — FastMCP builds the schema from it."
+            f"mcp_server.py, because that's what FastMCP builds the types from."
         )
     return results
 
@@ -217,14 +219,15 @@ def _no_results_message(parsed: dict) -> str:
 
 def _model_down_message(exc: Exception, session: dict) -> str:
     """
-    The message for the model-unavailable branch.
+    The message I show when the model can't be reached.
 
-    Two jobs. It has to say what broke and what to try, in words someone who
-    cannot see the code can act on — which is what `generate._explain` already
-    produces, so it is quoted rather than reworded. And it has to hand back the
-    part of the run that did succeed: search and the price check are
-    deterministic and had already finished, so the item and its verdict are
-    known facts and there is no reason to lose them with the exception.
+    It has two jobs. It has to say what broke and what to try in words someone
+    who can't see my code can actually use, and `generate._explain` already
+    writes that well, so I quote it instead of rewording it. And it has to hand
+    back the part of the run that did work. Search and the price check don't use
+    the model and had already finished by this point, so the item and its price
+    verdict are things I actually know. There's no reason to throw them away
+    just because the next step failed.
     """
     item = session.get("selected_item") or {}
     found = ""
@@ -411,14 +414,15 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     item = session["selected_item"]
     wardrobe_items = (session["wardrobe"] or {}).get("items") or []
 
-    # Both remaining tools call the model, so both can fail for a reason that
-    # has nothing to do with the query. Unit 4, Milestone 2: triggering that on
-    # purpose showed two defects that the message alone hid. The trace stopped
-    # dead at the last good step, so the one piece of evidence a trace exists to
-    # provide was missing exactly where it was needed; and everything the
-    # deterministic half of the run had already established — the item, its
-    # price, the price verdict — was thrown away with the exception. Both are
-    # fixed by catching it here instead of in app.py's blanket handler.
+    # Both of the tools left call the model, so both can fail for a reason that
+    # has nothing to do with what the user asked for. In Milestone 2 I broke
+    # this on purpose and found two problems that the error message itself was
+    # hiding. The trace stopped at the last step that worked, so the thing I
+    # built to show me what happened showed me nothing right where I needed it.
+    # And the item, its price and the price verdict -- none of which need the
+    # model, and all of which were already worked out -- got thrown away with
+    # the error. Catching it here instead of letting app.py catch everything
+    # fixes both.
     try:
         session["outfit_suggestion"] = suggest_outfit(item, session["wardrobe"])
         trace.step(
@@ -444,8 +448,8 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         trace.step(
             "branch",
             returned=f"{type(exc).__name__} raised by the model call",
-            note="stopping after select_item — the search half of the run is "
-                 "kept and reported, the written half is not available",
+            note="stopping after select_item — I keep and report the search "
+                 "half of the run, the writing half isn't available",
         )
 
     return session

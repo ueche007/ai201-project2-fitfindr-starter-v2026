@@ -450,26 +450,28 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
     # buried in the item description, because criterion 4 requires both in
     # every card and a labelled line is harder for the model to drop.
     #
-    # ── UNIT 4, MILESTONE 5: the one improvement ──────────────────────────
+    # ── Unit 4, Milestone 5: my one improvement ───────────────────────────
     #
-    # The naming rule used to read:
+    # The naming rule used to say:
     #
     #     "- Name the item or what kind of thing it is in the first sentence."
     #
-    # "or what kind of thing it is" is an explicit licence to paraphrase, and
-    # the before-run shows the model taking it. On try 1 of the graphic-tee
-    # scenario, lst_033 "Vintage Band Tee — Faded Grey" came back as "Charcoal
-    # tour tee". "tour" is in no field this prompt passes and nowhere in the
-    # listing; the model inferred it from the style tag "band tee". At the same
-    # time it dropped "band" — the one word in the title that separates lst_033
-    # from lst_006 "Graphic Tee — 2003 Tour Bootleg Style" and lst_002 "Y2K
-    # Baby Tee", both of which the same search returned. So the caption read as
-    # a caption for a different listing on the same results page, and criterion
-    # 3's last clause missed on it.
+    # That "or what kind of thing it is" is me giving the model permission to
+    # reword things, and my before-run caught it taking that permission. On try
+    # 1 of the graphic tee scenario, lst_033 "Vintage Band Tee — Faded Grey"
+    # came back as "Charcoal tour tee". The word "tour" isn't in any field I
+    # send to this prompt and isn't anywhere in the listing either -- the model
+    # guessed it from the "band tee" style tag. At the same time it dropped
+    # "band", which is the one word in that title that tells lst_033 apart from
+    # lst_006 "Graphic Tee — 2003 Tour Bootleg Style" and lst_002 "Y2K Baby
+    # Tee", and the same search returned both of those. So the caption read
+    # like a caption for a different item on the same page of results, and
+    # that's what made criterion 3 miss.
     #
-    # The fix is to stop licensing the paraphrase and say why it matters, and
-    # to ask for the word in the first sentence so the same rule still carries
-    # criterion 4's first-sentence clause. Nothing else in this file changed.
+    # So I took the permission away and explained why it matters. I ask for the
+    # word in the first sentence specifically, so this one rule still covers
+    # criterion 4's "first sentence" part too. Nothing else in this file
+    # changed.
     title = new_item.get("title")
     prompt = (
         "Write a caption for a post about this secondhand find.\n\n"
@@ -486,20 +488,20 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         f"Do not rename the garment and do not swap a title word for a "
         f"near-synonym of your own — several similar items are listed at once, "
         f"and the caption has to make clear which one this is.\n"
-        # ── UNIT 4: the second improvement (stretch) ──────────────────
+        # ── Unit 4: my second fix (the stretch one) ───────────────────
         #
-        # The first improvement fixed criterion 3 and broke criterion 4: with
-        # the title rule in place, 9 of 25 cards started writing the price in
-        # words — "for thirty bucks on thredUp", "over on depop for nineteen
-        # bucks". No card stated a wrong price, but criterion 4 asks for the
-        # price "as a number", and a spelled-out price is not one. It also
-        # does not survive a price that is not a round number: "thirty bucks"
-        # for a $29.50 listing would be wrong rather than merely informal.
+        # My first fix sorted out criterion 3 and broke criterion 4. With the
+        # title rule in, 5 of 25 cards started writing the price out in words
+        # -- "for thirty bucks on thredUp", "over on depop for nineteen
+        # bucks". None of them got the price wrong, but criterion 4 asks for
+        # the price as a number and a spelled-out one isn't one. It also
+        # wouldn't hold up on a price that isn't round: "thirty bucks" for a
+        # $29.50 listing would be flat-out wrong, not just casual.
         #
-        # The old rule named the price in digits but never said the digits
-        # were the point, so "State the price ($30)" was satisfiable by any
-        # expression of thirty dollars. This one says the form as well as the
-        # value.
+        # The old rule did show the price in digits but never said the digits
+        # were the actual requirement, so "State the price ($30)" could be
+        # satisfied by any way of saying thirty dollars. This one asks for the
+        # form as well as the number.
         f"- State the price exactly once, in digits with the dollar sign, "
         f"written exactly as \"${_money(new_item.get('price'))}\" — not "
         f"spelled out in words, not rounded, not approximated.\n"

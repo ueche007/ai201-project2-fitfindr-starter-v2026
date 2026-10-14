@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 """
-Does the search really miss one reasonable phrasing in five? ← UNIT 4
+Does my search really miss one reasonable phrasing in five? Unit 4.
 
-Criterion 1's target is 4 of 5 rather than 5 of 5, and the reason written down
-in criteria.md before any results existed was this:
+My criterion 1 target is 4 of 5 instead of 5 of 5, and the reason I wrote down
+in criteria.md, before I had any results, was this:
 
     "`tee` finds the graphic tees but `t-shirt` scores zero against the same
      items, and `jumper` finds nothing where `sweatshirt` finds three ... I
      expect roughly one query in five that a human would call reasonable to
      score zero and route to the empty-search branch instead."
 
-That is a claim about the data and the tokeniser, not about the model, so it
-can be measured exactly and for free — `search_listings` makes no model call
-and is deterministic. This file measures it.
+That's a claim about my data and my word-splitting, not about the model, so I
+can check it exactly and for free -- `search_listings` makes no model calls and
+gives the same answer every time. This file checks it.
 
-It is a diagnostic, not one of the five criteria. It exists because criterion
-1's *number* rests on this claim, and a target whose justification goes
-unchecked is a guess with a decimal point on it.
+It's not one of my five criteria, it's a side check. I wrote it because the
+*number* in criterion 1 rests on that claim, and a target whose reasoning I
+never checked is just a guess with a decimal point on it.
 
-Each pair below is a listing that exists in the data, phrased the way the
-seller titled it and phrased the way somebody else might reasonably ask for
-the same garment.
+Each pair below is a real item in my data, written the way the seller titled it
+and the way somebody else might reasonably ask for the same thing.
 
     python probe_synonyms.py
 """
@@ -29,8 +28,8 @@ import config  # noqa: F401 — .env load and the Windows console fix
 from agent import parse_query
 from tools import search_listings
 
-# (what a seller calls it, what a reasonable person might call it, the id they
-#  should both be looking for)
+# (what the seller calls it, what a normal person might call it, and the id
+#  they should both be finding)
 PAIRS = [
     ("graphic tee",        "graphic t-shirt",      "lst_006"),
     ("sweatshirt",         "jumper",               "lst_012"),
@@ -51,7 +50,7 @@ PAIRS = [
 
 
 def finds(query: str, wanted: str) -> tuple[int, bool]:
-    """How many results, and whether the intended listing was among them."""
+    """How many results came back, and whether the item I wanted was one."""
     parsed = parse_query(query)
     results = search_listings(
         parsed["description"], parsed["size"], parsed["max_price"]
@@ -84,9 +83,9 @@ def main() -> None:
         f"target was set on."
     )
     print(
-        "\nA phrasing that returns hits but not the intended garment is still a\n"
-        "miss for the person who asked: they get styled an item they did not\n"
-        "ask about, which no criterion currently catches."
+        "\nA phrasing that gets results but not the item I wanted is still a\n"
+        "miss for whoever asked -- they get styled something they never asked\n"
+        "about, and none of my criteria catch that."
     )
 
 

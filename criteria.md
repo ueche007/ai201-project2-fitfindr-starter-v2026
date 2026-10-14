@@ -43,24 +43,22 @@ limiter.
 > least 12 are found by a reasonable alternative phrasing as well as by the
 > seller's own wording.**
 >
-> **Why revised:** the original clause is fine, and it was met 5 of 5. The
-> problem is that the *number* 4-of-5 was justified by something the clause
-> cannot measure. The reason given above for choosing 4 rather than 5 was that
-> "roughly one query in five that a human would call reasonable" would score
-> zero and route to the empty-search branch. But the clause begins "given a
-> query that matches at least one listing", so a phrasing that matches nothing
-> is excluded by the precondition: the one failure the target was set around
-> is the one failure the criterion is written to ignore. Under the original
-> wording, a search that found nothing for every phrasing except the seller's
-> exact title would still score 5 of 5.
+> **Why revised:** the original is fine as a thing to check, and it was met 5 of
+> 5. The problem is the *number*. I picked 4 of 5 instead of 5 of 5 because I
+> expected "roughly one query in five that a human would call reasonable" to
+> find nothing and get sent to the empty-search branch. But the criterion starts
+> "given a query that matches at least one listing", so a phrasing that finds
+> nothing is ruled out before the check even starts. The one failure I chose the
+> number for is the one failure the criterion ignores. As originally written, a
+> search that found nothing for every phrasing except the seller's exact title
+> would still score 5 of 5.
 >
-> So the thing the target rested on now has its own clause and its own number,
-> measured by `probe_synonyms.py`. Its first run gives 11 of 15, against the 12
-> the new clause asks for - so the added clause is MISSED, and missed at close
-> to the rate the original reasoning predicted (27% against 20%). This is a
-> tightening: criterion 1 is harder to satisfy now, not easier.
-
----
+> So I split the thing my target was actually resting on into its own clause
+> with its own number, and `probe_synonyms.py` measures it. The first run gives
+> 11 of 15, against the 12 the new clause asks for, so the added clause is
+> MISSED - and it's missed at close to the rate my original reasoning predicted
+> (27% against 20%). This makes criterion 1 harder to satisfy than it was, not
+> easier.
 
 ## 2. An impossible query stops before the second tool
 
@@ -139,31 +137,31 @@ would post.
 
 > **Revised in unit 4:** unchanged, except that the distinct-openings clause
 > becomes: **for one item captioned 5 times, the 5 cards must have 5 distinct
-> opening sentences** - in place of "the 5 cards must have 5 distinct opening
+> opening sentences** - instead of "the 5 cards must have 5 distinct opening
 > sentences" across 5 different items.
 >
-> **Why revised:** the clause measured the wrong thing. It compares the
-> openings of cards written about *five different garments*, which is close to
-> impossible to fail - a card about a leather belt and a card about platform
-> mary janes do not open alike, because the items share no words. It passed
-> 5 of 5 and told me nothing. The failure the clause says it exists to catch is
-> a template: "five cards opening 'Just found the perfect...' is a mail merge,
-> not a caption." A template appears when the *same* item is captioned
-> repeatedly, and that is exactly what the original clause never looked at.
+> **Why revised:** this clause was measuring the wrong thing. It compares the
+> openings of cards about *five different garments*, which is nearly impossible
+> to fail - a card about a leather belt and a card about platform mary janes
+> aren't going to open the same way, because the items have no words in common.
+> It passed 5 of 5 and told me nothing at all. The failure I said this clause
+> was for is a template: "five cards opening 'Just found the perfect...' is a
+> mail merge, not a caption." Templates show up when the *same* item gets
+> captioned over and over, and that's exactly what the original clause never
+> looked at.
 >
-> Measured across tries instead, the before-run gives 4 of 5 distinct openings
+> Measured across tries instead, my before-run gives 4 of 5 different openings
 > for `lst_037`, with "Scored these perfectly faded black straight-leg jeans on
-> thredUp" appearing verbatim on two separate tries, and 3 of 5 distinct when
-> only the first four words are compared. So the clause the original wording
-> could not fail, the revised wording fails. This is a tightening, and it is
-> the one place in this unit where testing a criterion found a defect in the
-> criterion rather than in the agent.
+> thredUp" appearing word for word on two separate tries, and 3 of 5 if I only
+> compare the first four words. So the clause the original wording couldn't
+> fail, the revised wording fails. This is a tightening, and it's the one place
+> this unit where testing a criterion found a problem with the criterion rather
+> than with my agent.
 >
-> **The verdicts in README.md are reported against the ORIGINAL wording of both
-> revised criteria**, because that is the target that existed before the
-> results did. The revisions are what the next unit's run is measured against.
-
----
+> **The before and after verdicts in README.md are all against the ORIGINAL
+> wording of both revised criteria**, because that's the target that existed
+> before I had any results. The revisions are what I'd measure against next
+> unit.
 
 ## 5. A stated price ceiling is never exceeded, and the empty-search message is actionable
 

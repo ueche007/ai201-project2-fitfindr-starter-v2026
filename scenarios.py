@@ -1,65 +1,65 @@
 """
-The runs my test needs. ← UNIT 4, MILESTONE 3
+The runs my test needs. Unit 4, Milestone 3.
 
-Each of the five criteria in criteria.md needs something run against it. This
-file is that worked out, scenario by scenario.
+Each of my five criteria needs something run against it. This file is me
+working that out and writing it down.
 
-`run_eval.py` runs everything here five times — five because the criteria are
-written out of five — and `score.py` applies the criteria to what came back.
+`run_eval.py` runs everything in here five times, because my criteria are
+written out of five, and `score.py` then checks the criteria against what came
+back.
 
 ─────────────────────────────────────────────────────────────────────────────
-HOW THE SCENARIOS MAP ONTO THE FIVE CRITERIA
+HOW THESE SCENARIOS LINE UP WITH MY FIVE CRITERIA
 
-Criteria 1, 3, 4 and 5(a) all need *several different matching queries* rather
-than one query several times:
+Criteria 1, 3, 4 and 5(a) all need *several different queries that match*
+rather than one query run several times:
 
     1    "the agent completes all three tool calls and returns a fit card"
     3    "for 5 different matching queries, the ids agree"
     4    "across 5 fit cards generated for 5 different items"
     5(a) "for 5 queries that each name a price ceiling"
 
-So one set of five queries serves all four, and the set is built to satisfy
-every one of those clauses at once. Each query names a price ceiling (5a),
-each matches at least one listing (1's precondition), and the five select five
-*distinct* items in five distinct categories (4). That is not a coincidence —
-the selections were checked against the data before the queries were written
-down, because `search_listings` and `compare_prices` are both deterministic, so
-which item each query selects is knowable in advance without spending a model
-call.
+So I use one set of five queries for all four, and I built the set to satisfy
+every one of those at the same time. Each query names a price limit (that's
+5a), each one actually matches something (criterion 1 needs that to even
+start), and the five of them pick five *different* items in five different
+categories (that's 4). That isn't luck -- I checked which item each query picks
+before I wrote them down here, because `search_listings` and `compare_prices`
+give the same answer every time, so I could work it out without spending a
+single model call.
 
-Two of the five are chosen for the loop path they exercise, not for the item:
+Two of the five I picked for the path they take, not for the item:
 
-    levis 501 jeans      candidate 1 is judged overpriced and rejected, so the
-                         loop goes round again. Criterion 3 exists for exactly
-                         this path — its stated risk is an off-by-one that
-                         would style candidate n while writing candidate n+1
-                         into the session, and a query that never rejects
-                         cannot catch that.
+    levis 501 jeans      candidate 1 comes out overpriced and gets rejected, so
+                         the loop goes round again. Criterion 3 is about
+                         exactly this path -- the thing it says it's watching
+                         for is an off-by-one that would style one candidate
+                         while writing a different one into the session, and a
+                         query that never rejects anything can't catch that.
 
-    platform mary janes  every candidate is judged overpriced, so the `else`
-                         clause of the loop runs and the top match is taken
-                         with a price warning. The only scenario that reaches
-                         that code.
+    platform mary janes  every candidate comes out overpriced, so the `else`
+                         part of my loop runs and it takes the top match anyway
+                         with a warning. This is the only scenario that gets
+                         anywhere near that code.
 
-A "try" is one repetition of a criterion's whole set. So try 3 of criterion 4
-means the third pass over all five items, and it passes only if all five cards
-in that pass satisfied the criterion. Five repetitions of five queries is 25
-runs, not 5 — the repetition is what exposes model variance, and the set is
-what the criterion actually asks about.
+One "try" means one full pass through a criterion's whole set. So try 3 of
+criterion 4 is my third pass over all five items, and it only passes if all
+five cards in that pass were good. Five passes over five queries is 25 runs,
+not 5. The repeating is what shows me where the model varies; the set of five
+is what the criterion is actually asking about.
 
-Criterion 2 is one impossible query, five repetitions — the path is pure regex
-and an `if`, so what varies between tries is nothing, which is the point of
-the 5-of-5 target.
+Criterion 2 is one impossible query, five times over. That path is just a
+regular expression and an `if`, so nothing about it can change between tries,
+which is the whole reason I set that target at 5 of 5.
 
-Criterion 5(b) needs three *different* kinds of empty, not three empty queries:
-a ceiling nothing can meet, a size nothing is stocked in, and words that are
-not in the data at all. Those three exercise the three different branches of
+Criterion 5(b) needs three *different kinds* of empty, not three empty queries:
+a price limit nothing can meet, a size nothing is stocked in, and words that
+just aren't in my data. Those three hit the three different branches of
 `_no_results_message`, which is what the criterion is really about.
 ─────────────────────────────────────────────────────────────────────────────
 
-`criteria` is the list of criteria a scenario feeds. `criterion` stays as the
-single number run_eval.py labels the row with. `note` is why the scenario is
-in the set.
+`criteria` is the list of criteria a scenario feeds into. `criterion` is the
+single number run_eval.py labels the row with. `note` is why I put it in.
 """
 
 SCENARIOS = [
@@ -71,8 +71,8 @@ SCENARIOS = [
         "criterion": 1,
         "criteria": [1, 3, 4, 5],
         "expect_item": "lst_033",
-        "note": "The unit 3 happy path, kept unchanged so this unit's numbers "
-                "are comparable with last unit's sample run.",
+        "note": "My unit 3 happy path, left exactly as it was so this unit's "
+                "numbers can be compared with last unit's sample run.",
     },
     {
         "name": "outerwear — track jacket, with a size filter",
@@ -81,8 +81,9 @@ SCENARIOS = [
         "criterion": 1,
         "criteria": [1, 3, 4, 5],
         "expect_item": "lst_004",
-        "note": "The only matching scenario that also parses a size, so the "
-                "price-then-size parse order is exercised on the happy path.",
+        "note": "The only matching scenario that also has a size in it, so "
+                "the price-then-size parsing order gets tested on a query "
+                "that works.",
     },
     {
         "name": "bottoms — jeans, rejects one candidate first",
@@ -91,8 +92,9 @@ SCENARIOS = [
         "criterion": 1,
         "criteria": [1, 3, 4, 5],
         "expect_item": "lst_037",
-        "note": "Candidate 1 is overpriced and rejected, so the loop re-plans. "
-                "This is the path criterion 3's off-by-one risk lives on.",
+        "note": "Candidate 1 is overpriced and gets rejected, so the loop "
+                "goes round again. This is the path where the off-by-one that "
+                "criterion 3 is worried about would happen.",
     },
     {
         "name": "shoes — mary janes, every candidate overpriced",
@@ -101,8 +103,9 @@ SCENARIOS = [
         "criterion": 1,
         "criteria": [1, 3, 4, 5],
         "expect_item": "lst_009",
-        "note": "Every candidate is overpriced, so the loop's else clause takes "
-                "the top match with a price warning. Nothing else reaches it.",
+        "note": "Every candidate is overpriced, so my loop's else clause "
+                "takes the top match anyway and warns about the price. "
+                "Nothing else in my test reaches that code.",
     },
     {
         "name": "accessories — shoulder bag",
@@ -111,8 +114,9 @@ SCENARIOS = [
         "criterion": 1,
         "criteria": [1, 3, 4, 5],
         "expect_item": "lst_039",
-        "note": "Fifth distinct category. Criterion 4 wants five different "
-                "items, and an accessory is the furthest thing from a tee.",
+        "note": "My fifth different category. Criterion 4 wants five "
+                "different items, and a bag is about as far from a t-shirt as "
+                "this data gets.",
     },
 
     # ── Criterion 2: the empty-search branch ──────────────────────────────
@@ -123,7 +127,8 @@ SCENARIOS = [
         "criterion": 2,
         "criteria": [2],
         "expect_item": None,
-        "note": "The unit 3 dud, unchanged. All three constraints at once.",
+        "note": "The dud query from unit 3, unchanged. It has a price limit, "
+                "a size and words that don't match, all at once.",
     },
 
     # ── Criterion 5(b): three different kinds of empty ────────────────────
@@ -134,9 +139,9 @@ SCENARIOS = [
         "criterion": 5,
         "criteria": [5],
         "expect_item": None,
-        "note": "Keywords that match plenty; a $5 ceiling that nothing meets. "
-                "The message has to name the ceiling, because the ceiling is "
-                "the one thing worth loosening.",
+        "note": "Words that match plenty of things, with a $5 limit nothing "
+                "can meet. The message has to say the $5 out loud, because "
+                "the price is the one thing worth changing here.",
     },
     {
         "name": "empty — size nothing is stocked in",
@@ -145,8 +150,8 @@ SCENARIOS = [
         "criterion": 5,
         "criteria": [5],
         "expect_item": None,
-        "note": "Keywords that match; a size no listing carries. The message "
-                "has to name the size.",
+        "note": "Words that match, with a size nothing is stocked in. The "
+                "message has to say the size out loud.",
     },
     {
         "name": "empty — words not in the data",
@@ -155,9 +160,10 @@ SCENARIOS = [
         "criterion": 5,
         "criteria": [5],
         "expect_item": None,
-        "note": "No ceiling and no size, so the message has nothing to quote "
-                "but the keywords. The hardest of the three to make "
-                "actionable, and the reason 5(b) is written as it is.",
+        "note": "No price limit and no size, so the only thing the message "
+                "can repeat back is the words I searched for. This is the "
+                "hardest of the three to make useful, and it's why I wrote "
+                "5(b) the way I did.",
     },
 
     # ── Diagnostic: one of the three failure modes, not one of the five ───
@@ -168,8 +174,9 @@ SCENARIOS = [
         "criterion": None,
         "criteria": [],
         "expect_item": "lst_007",
-        "note": "Failure mode 2 from Milestone 2, run five times so it is "
-                "tested rather than tried once. Not one of the five criteria.",
+        "note": "The empty wardrobe failure from Milestone 2, run five times "
+                "so I've actually tested it instead of trying it once. Not "
+                "one of my five criteria.",
     },
 ]
 
@@ -190,7 +197,7 @@ def validate() -> list[str]:
         for number in scenario.get("criteria", []):
             if number not in (1, 2, 3, 4, 5):
                 problems.append(
-                    f"scenario {i} claims criterion {number!r}, which isn't "
-                    f"one of the five in criteria.md"
+                    f"scenario {i} says it tests criterion {number!r}, which "
+                    f"isn't one of the five in criteria.md"
                 )
     return problems
