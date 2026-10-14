@@ -30,6 +30,7 @@ mode — caching is what usually explains it.
 
 import argparse
 import datetime as dt
+import json
 import sys
 import traceback
 
@@ -112,6 +113,22 @@ def main():
         print()
 
     write_report(rows, args)
+
+
+def _session_for_json(session):
+    """
+    A session, trimmed for the results file.
+
+    The wardrobe is dropped: it is the same ten items on every run that uses
+    it, it is the largest thing in the session, and no criterion asks about it.
+    Its length is kept, because criterion-free or not, "wardrobe items = 0" is
+    what distinguishes the empty-wardrobe scenario from the others.
+    """
+    if not session:
+        return None
+    trimmed = {k: v for k, v in session.items() if k != "wardrobe"}
+    trimmed["wardrobe_item_count"] = len((session.get("wardrobe") or {}).get("items") or [])
+    return trimmed
 
 
 def write_report(rows, args):
@@ -202,6 +219,46 @@ def write_report(rows, args):
                 lines += ["Trace:", "", "```", record["trace"], "```", ""]
 
     path.write_text("\n".join(lines), encoding="utf-8")
+
+    # ── machine-readable twin of the same run ─────────────────────────────
+    #
+    # Added in unit 4. The markdown above is for reading; this is for scoring.
+    # Judging 45 runs by eye is where a test quietly turns into a test of
+    # whether I remembered what I decided three rows ago, so the verdicts come
+    # from score.py applying criteria.md to this file. The criteria are still
+    # mine and the judgement is still mine — it is written down in code
+    # instead of in my head, which makes it auditable and re-runnable.
+    data_path = path.with_suffix(".json")
+    data_path.write_text(
+        json.dumps(
+            {
+                "label": args.label,
+                "tries": n,
+                "when": dt.datetime.now().isoformat(timespec="seconds"),
+                "temperature": config.TEMPERATURE,
+                "cache_enabled": config.CACHE_ENABLED,
+                "rows": [
+                    {
+                        "scenario": row["scenario"],
+                        "tries": [
+                            {
+                                "crashed": rec["crashed"],
+                                "traceback": rec.get("traceback"),
+                                "trace": rec["trace"],
+                                "session": _session_for_json(rec["session"]),
+                            }
+                            for rec in row["tries"]
+                        ],
+                    }
+                    for row in rows
+                ],
+            },
+            indent=1,
+            default=str,
+        ),
+        encoding="utf-8",
+    )
+    print(f"Wrote {data_path.relative_to(config.ROOT)}  (for score.py)")
 
     import generate
 
