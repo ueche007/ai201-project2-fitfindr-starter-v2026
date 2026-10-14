@@ -215,6 +215,42 @@ def _no_results_message(parsed: dict) -> str:
     )
 
 
+def _model_down_message(exc: Exception, session: dict) -> str:
+    """
+    The message for the model-unavailable branch.
+
+    Two jobs. It has to say what broke and what to try, in words someone who
+    cannot see the code can act on — which is what `generate._explain` already
+    produces, so it is quoted rather than reworded. And it has to hand back the
+    part of the run that did succeed: search and the price check are
+    deterministic and had already finished, so the item and its verdict are
+    known facts and there is no reason to lose them with the exception.
+    """
+    item = session.get("selected_item") or {}
+    found = ""
+    if item:
+        found = (
+            f"\n  I did get as far as finding one: {item.get('title')} — "
+            f"${_number(item.get('price'))} on {item.get('platform')}"
+        )
+        if session.get("price_check"):
+            found += f"\n  Price check: {session['price_check']['summary']}"
+        found += (
+            "\n  That part of the run doesn't use the model, so it's a real "
+            "result — only the outfit and the caption are missing."
+        )
+
+    return (
+        f"I found something, but I couldn't reach the model to style it or "
+        f"write the caption.\n"
+        f"  What broke: {exc}"
+        f"{found}\n"
+        f"  To try: fix the key or the connection above, then run the same "
+        f"query again — the search will return the same item, so nothing is "
+        f"lost by retrying."
+    )
+
+
 # ── session state ─────────────────────────────────────────────────────────────
 
 def new_session(query: str, wardrobe: dict) -> dict:
@@ -375,25 +411,42 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     item = session["selected_item"]
     wardrobe_items = (session["wardrobe"] or {}).get("items") or []
 
-    session["outfit_suggestion"] = suggest_outfit(item, session["wardrobe"])
-    trace.step(
-        "suggest_outfit",
-        inputs=f"selected_item id = {item['id']} (read back from session), "
-               f"wardrobe items = {len(wardrobe_items)}",
-        returned=session["outfit_suggestion"],
-        note="empty wardrobe — general advice" if not wardrobe_items else "",
-    )
+    # Both remaining tools call the model, so both can fail for a reason that
+    # has nothing to do with the query. Unit 4, Milestone 2: triggering that on
+    # purpose showed two defects that the message alone hid. The trace stopped
+    # dead at the last good step, so the one piece of evidence a trace exists to
+    # provide was missing exactly where it was needed; and everything the
+    # deterministic half of the run had already established — the item, its
+    # price, the price verdict — was thrown away with the exception. Both are
+    # fixed by catching it here instead of in app.py's blanket handler.
+    try:
+        session["outfit_suggestion"] = suggest_outfit(item, session["wardrobe"])
+        trace.step(
+            "suggest_outfit",
+            inputs=f"selected_item id = {item['id']} (read back from session), "
+                   f"wardrobe items = {len(wardrobe_items)}",
+            returned=session["outfit_suggestion"],
+            note="empty wardrobe — general advice" if not wardrobe_items else "",
+        )
 
-    # ── Step 4: write the fit card ────────────────────────────────────────
-    session["fit_card"] = create_fit_card(
-        session["outfit_suggestion"], session["selected_item"]
-    )
-    trace.step(
-        "create_fit_card",
-        inputs=f"outfit = {len(session['outfit_suggestion'])} chars, "
-               f"selected_item id = {session['selected_item']['id']}",
-        returned=session["fit_card"],
-    )
+        # ── Step 4: write the fit card ────────────────────────────────────
+        session["fit_card"] = create_fit_card(
+            session["outfit_suggestion"], session["selected_item"]
+        )
+        trace.step(
+            "create_fit_card",
+            inputs=f"outfit = {len(session['outfit_suggestion'])} chars, "
+                   f"selected_item id = {session['selected_item']['id']}",
+            returned=session["fit_card"],
+        )
+    except (ModelUnavailable, QuotaGuard) as exc:
+        session["error"] = _model_down_message(exc, session)
+        trace.step(
+            "branch",
+            returned=f"{type(exc).__name__} raised by the model call",
+            note="stopping after select_item — the search half of the run is "
+                 "kept and reported, the written half is not available",
+        )
 
     return session
 
