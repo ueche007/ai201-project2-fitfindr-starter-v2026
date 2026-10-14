@@ -37,6 +37,29 @@ with the delay the service asks for, which should absorb it, but I am not
 willing to promise 5 of 5 on a path that depends on someone else's rate
 limiter.
 
+> **Revised in unit 4:** Given a query that matches at least one listing, the
+> agent completes all three tool calls and returns a fit card - in at least 4
+> of 5 tries. **And, separately: of 15 garments that exist in the data, at
+> least 12 are found by a reasonable alternative phrasing as well as by the
+> seller's own wording.**
+>
+> **Why revised:** the original clause is fine, and it was met 5 of 5. The
+> problem is that the *number* 4-of-5 was justified by something the clause
+> cannot measure. The reason given above for choosing 4 rather than 5 was that
+> "roughly one query in five that a human would call reasonable" would score
+> zero and route to the empty-search branch. But the clause begins "given a
+> query that matches at least one listing", so a phrasing that matches nothing
+> is excluded by the precondition: the one failure the target was set around
+> is the one failure the criterion is written to ignore. Under the original
+> wording, a search that found nothing for every phrasing except the seller's
+> exact title would still score 5 of 5.
+>
+> So the thing the target rested on now has its own clause and its own number,
+> measured by `probe_synonyms.py`. Its first run gives 11 of 15, against the 12
+> the new clause asks for - so the added clause is MISSED, and missed at close
+> to the rate the original reasoning predicted (27% against 20%). This is a
+> tightening: criterion 1 is harder to satisfy now, not easier.
+
 ---
 
 ## 2. An impossible query stops before the second tool
@@ -113,6 +136,32 @@ reason temperature is above zero is to avoid that. I set the ceiling at 400
 characters and 4 sentences because a caption longer than that is a product
 description, and the tool's whole purpose is to produce something a person
 would post.
+
+> **Revised in unit 4:** unchanged, except that the distinct-openings clause
+> becomes: **for one item captioned 5 times, the 5 cards must have 5 distinct
+> opening sentences** - in place of "the 5 cards must have 5 distinct opening
+> sentences" across 5 different items.
+>
+> **Why revised:** the clause measured the wrong thing. It compares the
+> openings of cards written about *five different garments*, which is close to
+> impossible to fail - a card about a leather belt and a card about platform
+> mary janes do not open alike, because the items share no words. It passed
+> 5 of 5 and told me nothing. The failure the clause says it exists to catch is
+> a template: "five cards opening 'Just found the perfect...' is a mail merge,
+> not a caption." A template appears when the *same* item is captioned
+> repeatedly, and that is exactly what the original clause never looked at.
+>
+> Measured across tries instead, the before-run gives 4 of 5 distinct openings
+> for `lst_037`, with "Scored these perfectly faded black straight-leg jeans on
+> thredUp" appearing verbatim on two separate tries, and 3 of 5 distinct when
+> only the first four words are compared. So the clause the original wording
+> could not fail, the revised wording fails. This is a tightening, and it is
+> the one place in this unit where testing a criterion found a defect in the
+> criterion rather than in the agent.
+>
+> **The verdicts in README.md are reported against the ORIGINAL wording of both
+> revised criteria**, because that is the target that existed before the
+> results did. The revisions are what the next unit's run is measured against.
 
 ---
 

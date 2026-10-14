@@ -449,9 +449,31 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
     # Price and platform are passed in their own labelled lines rather than
     # buried in the item description, because criterion 4 requires both in
     # every card and a labelled line is harder for the model to drop.
+    #
+    # ── UNIT 4, MILESTONE 5: the one improvement ──────────────────────────
+    #
+    # The naming rule used to read:
+    #
+    #     "- Name the item or what kind of thing it is in the first sentence."
+    #
+    # "or what kind of thing it is" is an explicit licence to paraphrase, and
+    # the before-run shows the model taking it. On try 1 of the graphic-tee
+    # scenario, lst_033 "Vintage Band Tee — Faded Grey" came back as "Charcoal
+    # tour tee". "tour" is in no field this prompt passes and nowhere in the
+    # listing; the model inferred it from the style tag "band tee". At the same
+    # time it dropped "band" — the one word in the title that separates lst_033
+    # from lst_006 "Graphic Tee — 2003 Tour Bootleg Style" and lst_002 "Y2K
+    # Baby Tee", both of which the same search returned. So the caption read as
+    # a caption for a different listing on the same results page, and criterion
+    # 3's last clause missed on it.
+    #
+    # The fix is to stop licensing the paraphrase and say why it matters, and
+    # to ask for the word in the first sentence so the same rule still carries
+    # criterion 4's first-sentence clause. Nothing else in this file changed.
+    title = new_item.get("title")
     prompt = (
         "Write a caption for a post about this secondhand find.\n\n"
-        f"The item: {new_item.get('title')}\n"
+        f"The item: {title}\n"
         f"Price: ${_money(new_item.get('price'))}\n"
         f"Platform: {new_item.get('platform')}\n"
         f"Colours: {', '.join(new_item.get('colors') or []) or 'unspecified'}\n"
@@ -459,7 +481,11 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         f"How it is being worn:\n{outfit.strip()}\n\n"
         "Rules:\n"
         "- Two to four sentences, under 400 characters in total.\n"
-        "- Name the item or what kind of thing it is in the first sentence.\n"
+        f"- The first sentence must name the item in the listing's own words: "
+        f"at least one word from the title \"{title}\" has to appear in it. "
+        f"Do not rename the garment and do not swap a title word for a "
+        f"near-synonym of your own — several similar items are listed at once, "
+        f"and the caption has to make clear which one this is.\n"
         f"- State the price (${_money(new_item.get('price'))}) exactly once.\n"
         f"- Name the platform ({new_item.get('platform')}) exactly once.\n"
         "- Be specific about the feel of the outfit rather than calling it cute.\n"
