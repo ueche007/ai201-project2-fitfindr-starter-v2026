@@ -22,9 +22,67 @@ import re
 
 import config  # noqa: F401 — imported for its .env load and Windows console fix
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card, compare_prices
+from mcp_client import MCPError, call_tool
+from tools import suggest_outfit, create_fit_card, compare_prices
 from utils.data_loader import load_listings
-from generate import ModelUnavailable  # noqa: F401 — handled in unit 4
+from generate import ModelUnavailable, QuotaGuard
+
+# ── search_listings now arrives over MCP ──────────────────────────────────────
+#
+# Unit 4, Milestone 1. `search_listings` is no longer imported from tools.py —
+# it is called over the protocol, from mcp_server.py, by name. The other three
+# tools stay as direct calls, which is the point: the seam is visible because
+# only one tool crosses it.
+#
+# `tools.search_listings` is still the implementation underneath; mcp_server.py
+# imports it and registers it. Nothing about the search logic changed.
+
+
+class SearchUnavailable(Exception):
+    """
+    Raised when the MCP server holding search_listings cannot be reached.
+
+    This is a failure mode the direct call did not have. Before the move, a
+    broken search was a Python exception in this process; now it is a subprocess
+    that might not start, a protocol that might not handshake, or a tool name
+    that might not be registered. Catching it here is what keeps the new
+    transport from reaching the user as a stack trace.
+    """
+
+
+def _search_over_mcp(description, size, max_price) -> list[dict]:
+    """
+    Call search_listings on the MCP server and insist on the shape it promised.
+
+    The published contract says a JSON array, empty when nothing matches. The
+    loop's first branch tests emptiness, so anything that is not a list is
+    turned into a raised error rather than allowed to flow on and be read as
+    "no results" — a transport fault and an empty catalogue must not look the
+    same to the branch.
+    """
+    try:
+        results = call_tool(
+            "search_listings",
+            {"description": description, "size": size, "max_price": max_price},
+        )
+    except MCPError as exc:
+        raise SearchUnavailable(
+            f"The search tool couldn't be reached over MCP, so I have nothing "
+            f"to search.\n"
+            f"  What broke: {exc}\n"
+            f"  To try: run `python mcp_server.py` on its own — if it exits "
+            f"with an error, that error is the cause. `python mcp_client.py` "
+            f"should list search_listings."
+        ) from exc
+
+    if not isinstance(results, list):
+        raise SearchUnavailable(
+            f"The search tool returned a {type(results).__name__} over MCP, "
+            f"where its published contract promises a JSON array.\n"
+            f"  To try: check the return type hint on search_listings in "
+            f"mcp_server.py — FastMCP builds the schema from it."
+        )
+    return results
 
 
 # ── Query parsing ─────────────────────────────────────────────────────────────
@@ -219,13 +277,13 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     )
 
     # ── Step 2: search ────────────────────────────────────────────────────
-    session["search_results"] = search_listings(
+    session["search_results"] = _search_over_mcp(
         description=session["parsed"]["description"],
         size=session["parsed"]["size"],
         max_price=session["parsed"]["max_price"],
     )
     trace.step(
-        "search_listings",
+        "search_listings (via MCP)",
         inputs=(
             f"description={session['parsed']['description']!r}, "
             f"size={session['parsed']['size']!r}, "

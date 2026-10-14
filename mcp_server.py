@@ -67,37 +67,71 @@ from tools import search_listings as _search_listings_impl  # noqa: F401 — you
 mcp = FastMCP("fitfindr", log_level="WARNING")
 
 
-# ── TODO: uncomment and fill this in ──────────────────────────────────────────
+# ── The one tool exposed over MCP ─────────────────────────────────────────────
 #
-# @mcp.tool()
-# def search_listings(
-#     description: str,
-#     size: str | None = None,
-#     max_price: float | None = None,
-# ) -> list[dict]:
-#     """
-#     <-- YOUR DESCRIPTION GOES HERE.
+# Written for an agent that will never see tools.py: every unit, every type and
+# the empty case are stated in the description itself, because the description
+# is the only documentation a remote caller gets.
+
+
+@mcp.tool()
+def search_listings(
+    description: str,
+    size: str | None = None,
+    max_price: float | None = None,
+) -> list[dict]:
+    """
+    Search a fixed catalogue of 40 secondhand clothing listings and return the
+    ones matching a plain-language description, ranked best match first.
+
+    Matching is keyword overlap against the listing's title, style tags,
+    category, brand, colours and description — there is no synonym expansion,
+    so "tee" and "t-shirt" do not find each other. Scoring is deterministic:
+    the same arguments always return the same list in the same order.
+
+    Args:
+        description: Free-text keywords for the garment wanted, e.g.
+            "vintage graphic tee". Required, and must contain at least one word
+            longer than one character that is not a stopword — otherwise there
+            is no basis for a match and the result is empty.
+        size: A size string to filter by, or null for no size filter. Sizes in
+            this catalogue span four incompatible scales and a listing only
+            matches inside its own scale: letter ("XXS" … "XXXL", and ranges
+            written "S/M"), waist ("W30", "W30 L30"), US shoe ("US 8",
+            "US 8.5"), or one-size. A bare number is read as a US shoe size at
+            16 or below and a waist measurement above it. Any listing whose own
+            size is One Size matches every request.
+        max_price: An inclusive ceiling in whole US dollars — 30 means $30.00
+            and under. Null for no price filter. Every price in this catalogue
+            is between $12 and $75.
+
+    Returns:
+        A JSON array of at most 10 listing objects, highest match first and
+        cheaper first among equal scores. Each object has eleven catalogue
+        fields — id (str), title (str), description (str), category (str),
+        style_tags (array of str), size (str), condition (str), price (number,
+        US dollars), colors (array of str), brand (str or null — null on 32 of
+        the 40 listings), platform (str) — plus match_score (number), the
+        keyword score it was ranked on.
+
+        When nothing matches, returns an empty array. It does not return null,
+        it does not return an error, and it does not raise: an empty array is
+        the normal, expected answer to a query this catalogue cannot satisfy,
+        and a caller should treat it as "no stock for these constraints"
+        rather than as a failure.
+    """
+    return _search_listings_impl(description, size, max_price)
+
+
+# The registered name is the *function* name, so the block above registers
+# "search_listings" — exactly what call_tool("search_listings", ...) asks for.
+# That is also why the import at the top brings the real implementation in
+# under an alias: without it the registered function and the one it calls would
+# share a name, and the tool would call itself.
 #
-#         One or two sentences. What does this tool do, what does it need, and
-#         what does it give back when it finds nothing? Written for a reader
-#         who cannot see the code.
-#     """
-#     return _search_listings_impl(description, size, max_price)
-#
-# ──────────────────────────────────────────────────────────────────────────────
-#
-# Two notes on the block above.
-#
-# The registered name is the *function* name — so the block above registers
-# "search_listings", which is exactly what call_tool("search_listings", ...)
-# asks for. That is also why the import at the top of this file brings the real
-# implementation in under an alias: without it, the registered function and the
-# one it calls would be the same name, and the tool would call itself.
-#
-# FastMCP builds the input schema from your type hints, which is why the hints
-# are not optional here. `description: str` becomes a required string;
-# `max_price: float | None = None` becomes an optional number. Getting these
-# wrong is the most common reason a call is rejected.
+# FastMCP builds the input schema from the type hints, which is why they are not
+# optional here. `description: str` becomes a required string;
+# `max_price: float | None = None` becomes an optional number.
 
 
 if __name__ == "__main__":
