@@ -486,7 +486,23 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         f"Do not rename the garment and do not swap a title word for a "
         f"near-synonym of your own — several similar items are listed at once, "
         f"and the caption has to make clear which one this is.\n"
-        f"- State the price (${_money(new_item.get('price'))}) exactly once.\n"
+        # ── UNIT 4: the second improvement (stretch) ──────────────────
+        #
+        # The first improvement fixed criterion 3 and broke criterion 4: with
+        # the title rule in place, 9 of 25 cards started writing the price in
+        # words — "for thirty bucks on thredUp", "over on depop for nineteen
+        # bucks". No card stated a wrong price, but criterion 4 asks for the
+        # price "as a number", and a spelled-out price is not one. It also
+        # does not survive a price that is not a round number: "thirty bucks"
+        # for a $29.50 listing would be wrong rather than merely informal.
+        #
+        # The old rule named the price in digits but never said the digits
+        # were the point, so "State the price ($30)" was satisfiable by any
+        # expression of thirty dollars. This one says the form as well as the
+        # value.
+        f"- State the price exactly once, in digits with the dollar sign, "
+        f"written exactly as \"${_money(new_item.get('price'))}\" — not "
+        f"spelled out in words, not rounded, not approximated.\n"
         f"- Name the platform ({new_item.get('platform')}) exactly once.\n"
         "- Be specific about the feel of the outfit rather than calling it cute.\n"
         "- No hashtags, no emoji-only sentences, no opening with 'Just'.\n"
