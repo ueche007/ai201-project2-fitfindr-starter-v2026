@@ -40,8 +40,8 @@ All three optional features are implemented, declared here before the build:
    runs, so an item found in one run can be worn in the next.
 
 **Added in unit 4:** one stretch feature from that unit's list — **a second
-improvement from the diagnosis, measured the same way as the first**. Declared
-under [The Improvement](#the-improvement) before it was built. A second tool was
+improvement from the diagnosis, measured the same way as the first**. Described
+under [The Improvement](#the-improvement). A second tool was
 *not* moved onto MCP, and retry-with-looser-constraints was *not* added.
 
 ---
